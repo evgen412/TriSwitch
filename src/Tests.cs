@@ -80,6 +80,17 @@ namespace TriSwitch
                 test("Native layout conversion", delegate
                 { if (catalog.Available(Language.English) && catalog.Available(Language.Ukrainian)) Equal("привіт", catalog.Convert("ghbdsn", Language.English, Language.Ukrainian)); else throw new Exception("EN or UK layout missing"); });
                 PreferenceTests.Run(test, directory);
+                test("Text case RU UK EN", delegate
+                {
+                    Equal("ПРИВЕТ ЇЖАК HELLO", TextCase.Convert("Привет їжак Hello", TextCaseMode.Upper));
+                    Equal("привет їжак hello", TextCase.Convert("ПРИВЕТ ЇЖАК HELLO", TextCaseMode.Lower));
+                    Equal("Привет,  Їжак\r\nHello", TextCase.Convert("ПРИВЕТ,  їжак\r\nhello", TextCaseMode.Title));
+                    Equal("П’ять Don't Пів-Європи", TextCase.Convert("П’ЯТЬ DON'T ПІВ-ЄВРОПИ", TextCaseMode.Title));
+                    Equal("«Привет!» Как дела? Добре. Hello… World!\r\nНовая строка", TextCase.Convert("«ПРИВЕТ!» КАК ДЕЛА? ДОБРЕ. HELLO… WORLD!\r\nНОВАЯ СТРОКА", TextCaseMode.Sentence));
+                    Equal("Цена 3.14 рубля. Дальше", TextCase.Convert("ЦЕНА 3.14 РУБЛЯ. ДАЛЬШЕ", TextCaseMode.Sentence));
+                    foreach (TextCaseMode mode in Enum.GetValues(typeof(TextCaseMode)))
+                    { Equal("", TextCase.Convert("", mode)); Equal(" 123\t\r\n🙂", TextCase.Convert(" 123\t\r\n🙂", mode)); }
+                });
             }
             catch (Exception e) { failures++; log.Add("FAIL initialization: " + e); }
             log.Add("Results: " + (log.Count(s => s.StartsWith("PASS"))) + " passed; " + failures + " failed; " + clock.ElapsedMilliseconds + " ms");
@@ -239,7 +250,7 @@ namespace TriSwitch
             }, 200);
             type("brb "); add("CUSTOM phrase keeps active layout", delegate { Tests.Equal("Скоро вернусь ", form.TestEditor.Text); Tests.Check(Native.InputLanguage(Native.GetKeyboardLayout(0)) == Language.English, "layout not preserved"); }, 200);
             combination(120, 6); add("CUSTOM undo removes entire phrase", delegate { Tests.Equal("brb ", form.TestEditor.Text); }, 200);
-            add("Reset", reset, 150); type("brb "); add("UNDONE rule suppressed for session", delegate { Tests.Equal("brb ", form.TestEditor.Text); }, 200);
+            type("brb "); add("CUSTOM rule works again immediately after undo", delegate { Tests.Equal("brb Скоро вернусь ", form.TestEditor.Text); }, 200);
             add("Reset", reset, 150); type("ukr "); add("CUSTOM target layout selected", delegate { Tests.Equal("Слава Україні ", form.TestEditor.Text); Tests.Check(Native.InputLanguage(Native.GetKeyboardLayout(0)) == Language.Ukrainian, "UK not selected"); }, 200);
             add("Reset", reset, 150); type("hello "); add("CUSTOM overrides dictionary word", delegate { Tests.Equal("Здравствуйте ", form.TestEditor.Text); }, 200);
             add("DISABLE custom rule", delegate { reset(); string error; Tests.Check(form.ApplyReplacements(new List<ReplacementRule> { new ReplacementRule { From = "ukr", To = "Слава Україні", Target = 2, Enabled = false } }, out error), error); }, 200);

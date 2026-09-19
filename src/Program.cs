@@ -93,6 +93,8 @@ namespace TriSwitch
         private readonly bool startHidden;
         private readonly bool testMode;
         internal TextBox TestEditor;
+        internal Action<string> TestTrace;
+        private void TraceTest(string stage) { if (testMode && TestTrace != null) TestTrace(stage); }
         internal bool IsWatching { get { return watcher != null; } }
         internal void SetTestExclusions(string text) { if (testMode) guard.Configure(text); }
         internal HotkeyBox FocusTestHotkey(int index)
@@ -198,7 +200,7 @@ namespace TriSwitch
             TestEditor = new TextBox { Multiline = true, Dock = DockStyle.Fill, ScrollBars = ScrollBars.Vertical, Font = new Font("Segoe UI", 14), AccessibleName = "Поле проверки раскладок" };
             homeLayout.Controls.Add(TestEditor, 0, 2);
             home.Controls.Add(homeLayout); tabs.TabPages.Add(home);
-            tabs.TabPages.Add(BuildConverter()); tabs.TabPages.Add(BuildHotkeys()); tabs.TabPages.Add(BuildReplacements()); tabs.TabPages.Add(BuildSettings());
+            tabs.TabPages.Add(BuildConverter()); tabs.TabPages.Add(BuildHotkeys()); tabs.TabPages.Add(BuildReplacements()); tabs.TabPages.Add(BuildSettings()); tabs.TabPages.Add(BuildTextCase());
             outer.Controls.Add(tabs, 0, 3);
             stateLabel.Dock = DockStyle.Fill; stateLabel.AutoSize = true; stateLabel.Margin = new Padding(3, 10, 3, 0); stateLabel.TextAlign = ContentAlignment.MiddleLeft; stateLabel.Font = new Font("Segoe UI", 9); outer.Controls.Add(stateLabel, 0, 4);
             Controls.Add(outer); UpdateStatus();
@@ -359,12 +361,14 @@ namespace TriSwitch
         }
         private void Undo()
         {
+            TraceTest("undo started");
             if (!undoAvailable || !CanReplace()) { Reset(); return; }
+            TraceTest("undo checked");
             if (!Native.ReplaceChecked(currentFocus, buffer.Word + buffer.Suffix, undoWord + undoSuffix, () => watcher.Serial == pendingSerial && !Native.ModifiersDown)) { Reset(); Notify("Windows не приняла отмену. Проверьте текст."); return; }
-            // Do not repeat the same rejected automatic correction during this run.
-            detector.Ignored.Add(undoWord.TrimEnd('.', ',', '!', '?', ':', ';'));
-            buffer.Word = undoWord; buffer.Suffix = undoSuffix; buffer.Language = undoLanguage; undoAvailable = false;
-            catalog.Switch(currentFocus, undoLanguage); stateLabel.Text = "Замена отменена. Это слово не будет автоисправляться до перезапуска.";
+            TraceTest("undo inserted");
+            // Forget only this occurrence; future typing must still use the same rule.
+            Reset();
+            catalog.Switch(currentFocus, undoLanguage); stateLabel.Text = "Замена отменена. При новом вводе автозамены продолжают работать.";
         }
         protected override void WndProc(ref Message message)
         {
@@ -419,6 +423,7 @@ namespace TriSwitch
             if (args.Contains("--ui-smoke-test")) return IntegrationTests.Preview(AppDomain.CurrentDomain.BaseDirectory);
             if (args.Contains("--startup-test")) return IntegrationTests.Startup(AppDomain.CurrentDomain.BaseDirectory);
             if (args.Contains("--notepad-test")) return NotepadTests.Run(AppDomain.CurrentDomain.BaseDirectory);
+            if (args.Contains("--notepad-hotkey-test")) return NotepadTests.Run(AppDomain.CurrentDomain.BaseDirectory, true);
             bool created;
             using (var mutex = new Mutex(true, "Local\\TriSwitch.3Languages", out created))
             {
