@@ -6,6 +6,11 @@ namespace TriSwitch
 {
     public static partial class Native
     {
+        public static bool SwitchInputLayout(FocusStamp focus, IntPtr layout)
+        {
+            // Let the application's outer window coordinate its input-language change.
+            return focus.Same(Focus()) && PostMessage(focus.Window, 0x50, IntPtr.Zero, layout);
+        }
         [DllImport("user32.dll", EntryPoint = "SendMessageTimeoutW", SetLastError = true)]
         private static extern IntPtr EditSelection(IntPtr window, uint message, ref int start, ref int end, uint flags, uint timeout, out IntPtr result);
         [DllImport("user32.dll", EntryPoint = "SendMessageTimeoutW", SetLastError = true)]

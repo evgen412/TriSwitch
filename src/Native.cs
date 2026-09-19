@@ -228,7 +228,7 @@ namespace TriSwitch
         }
         public bool Switch(FocusStamp focus, Language language)
         {
-            return focus.Same(Native.Focus()) && Available(language) && Native.PostMessage(focus.Control, 0x50, IntPtr.Zero, handles[(int)language]);
+            return Available(language) && Native.SwitchInputLayout(focus, handles[(int)language]);
         }
     }
     internal static class CatalogExtensions

@@ -84,6 +84,7 @@ namespace TriSwitch
         private readonly Detector detector;
         private readonly LayoutCatalog catalog = new LayoutCatalog();
         private readonly FocusGuard guard = new FocusGuard();
+        private readonly NotepadFontGuard notepadFontGuard = new NotepadFontGuard();
         private readonly WordBuffer buffer = new WordBuffer();
         private readonly NotifyIcon tray;
         private readonly System.Windows.Forms.Timer actionTimer = new System.Windows.Forms.Timer { Interval = 35 };
@@ -145,7 +146,7 @@ namespace TriSwitch
                 if (Native.ModifiersDown) return;
                 Action action = pending; CancelPending(); action();
             };
-            focusTimer.Tick += delegate { if (buffer.Valid && !currentFocus.Same(Native.Focus())) Reset(); };
+            focusTimer.Tick += delegate { var focus = Native.Focus(); notepadFontGuard.Protect(focus); if (buffer.Valid && !currentFocus.Same(focus)) Reset(); };
             Shown += delegate { if (!previewOnly && !startHidden) StartWatcher(); };
             FormClosing += OnClosing;
             if (startHidden)
@@ -298,6 +299,7 @@ namespace TriSwitch
         private void OnKey(KeyEvent e)
         {
             if (exiting) return;
+            notepadFontGuard.Protect(e.Focus);
             if (e.Reset) { Reset(); return; }
             if (hotkeys != null && hotkeys.Matches(e)) return;
             CancelPending();
@@ -408,6 +410,7 @@ namespace TriSwitch
             exiting = true; actionTimer.Stop(); focusTimer.Stop();
             if (hotkeys != null) hotkeys.Dispose();
             if (watcher != null) watcher.Dispose();
+            notepadFontGuard.Dispose();
             tray.Visible = false; tray.Dispose(); actionTimer.Dispose(); focusTimer.Dispose();
         }
     }
@@ -424,6 +427,8 @@ namespace TriSwitch
             if (args.Contains("--startup-test")) return IntegrationTests.Startup(AppDomain.CurrentDomain.BaseDirectory);
             if (args.Contains("--notepad-test")) return NotepadTests.Run(AppDomain.CurrentDomain.BaseDirectory);
             if (args.Contains("--notepad-hotkey-test")) return NotepadTests.Run(AppDomain.CurrentDomain.BaseDirectory, true);
+            if (args.Contains("--notepad-system-test-protected")) return NotepadTests.Run(AppDomain.CurrentDomain.BaseDirectory, false, true, true);
+            if (args.Contains("--notepad-system-test")) return NotepadTests.Run(AppDomain.CurrentDomain.BaseDirectory, false, true);
             bool created;
             using (var mutex = new Mutex(true, "Local\\TriSwitch.3Languages", out created))
             {
