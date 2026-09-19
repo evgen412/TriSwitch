@@ -61,6 +61,22 @@ namespace TriSwitch
                     finally { if (File.Exists(path)) File.Delete(path); }
                 });
                 var catalog = new LayoutCatalog(); log.Add("Installed layouts: " + catalog.Status);
+                test("Transient Windows input profiles", delegate
+                {
+                    var layouts = new IntPtr[Native.GetKeyboardLayoutList(0, null)];
+                    Native.GetKeyboardLayoutList(layouts.Length, layouts);
+                    foreach (IntPtr h in layouts)
+                    {
+                        int id = (int)(h.ToInt64() & 0xffff);
+                        if (id < 0x2000 || id > 0x4c00 || (id & 0x3ff) != 0) continue;
+                        var s = new StringBuilder(8);
+                        Native.ToUnicodeEx(0x53, Native.MapVirtualKeyEx(0x53, 0, h), new byte[256], s, 8, 4, h);
+                        if (s.ToString() == "ы") Check(Native.InputLanguage(h) == Language.Russian, "Transient RU profile");
+                        if (s.ToString() == "і") Check(Native.InputLanguage(h) == Language.Ukrainian, "Transient UK profile");
+                        log.Add("Transient profile " + h.ToString("X") + ": " + Native.InputLanguage(h));
+                    }
+                    Check(!Native.InputLanguage(IntPtr.Zero).HasValue, "Unknown layout must stay unsupported");
+                });
                 test("Native layout conversion", delegate
                 { if (catalog.Available(Language.English) && catalog.Available(Language.Ukrainian)) Equal("привіт", catalog.Convert("ghbdsn", Language.English, Language.Ukrainian)); else throw new Exception("EN or UK layout missing"); });
                 PreferenceTests.Run(test, directory);
@@ -133,7 +149,7 @@ namespace TriSwitch
             var timer = new Timer { Interval = 500 };
             IntPtr original = Native.GetKeyboardLayout(0);
             var installed = new IntPtr[Native.GetKeyboardLayoutList(0, null)]; Native.GetKeyboardLayoutList(installed.Length, installed);
-            Func<Language, IntPtr> layout = l => installed.FirstOrDefault(h => Layouts.FromHandle(h) == l);
+            Func<Language, IntPtr> layout = l => installed.OrderBy(h => Layouts.FromHandle(h).HasValue ? 1 : 0).FirstOrDefault(h => Native.InputLanguage(h) == l);
             Action<Language> activate = l => { Tests.Check(layout(l) != IntPtr.Zero, "Missing " + l); Native.ActivateKeyboardLayout(layout(l), 0); };
             Action focus = delegate { Tests.Check(Native.GetForegroundWindow() == form.Handle && inputTarget.Focused, "Test field lost focus; no input sent"); };
             Action<string, Action, int> add = (name, action, delay) => steps.Enqueue(new Step { Name = name, Action = action, Delay = delay });
@@ -173,9 +189,11 @@ namespace TriSwitch
                 var element = System.Windows.Automation.AutomationElement.FocusedElement;
                 log.Add("Guard=" + safe + "; identity=" + identity + "; control=" + element.Current.ControlType.ProgrammaticName + "; password=" + element.Current.IsPassword + "; focus=" + element.Current.HasKeyboardFocus);
             }, 400);
-            type("ghbdtn "); add("AUTO RU", delegate { log.Add(form.TestState); Tests.Equal("привет ", form.TestEditor.Text); Tests.Check(Layouts.FromHandle(Native.GetKeyboardLayout(0)) == Language.Russian, "RU layout switch"); }, 200);
+            type("ghbdtn "); add("AUTO RU", delegate { log.Add(form.TestState); Tests.Equal("привет ", form.TestEditor.Text); Tests.Check(Native.InputLanguage(Native.GetKeyboardLayout(0)) == Language.Russian, "RU layout switch"); }, 200);
             hotkey(8); add("UNDO preserves space", delegate { Tests.Equal("ghbdtn ", form.TestEditor.Text); }, 200);
-            add("Reset", reset, 150); type("ghbdsn "); add("AUTO UK", delegate { Tests.Equal("привіт ", form.TestEditor.Text); Tests.Check(Layouts.FromHandle(Native.GetKeyboardLayout(0)) == Language.Ukrainian, "UK layout switch"); }, 200);
+            add("Use Russian input profile (prefer transient)", delegate { reset(); activate(Language.Russian); }, 150);
+            type("hello "); add("RU profile auto correction", delegate { Tests.Equal("hello ", form.TestEditor.Text); Tests.Check(Native.InputLanguage(Native.GetKeyboardLayout(0)) == Language.English, "EN layout switch"); }, 200);
+            add("Reset", reset, 150); type("ghbdsn "); add("AUTO UK", delegate { Tests.Equal("привіт ", form.TestEditor.Text); Tests.Check(Native.InputLanguage(Native.GetKeyboardLayout(0)) == Language.Ukrainian, "UK layout switch"); }, 200);
             add("Reset", reset, 150); type("vfvf "); add("AMBIGUOUS unchanged", delegate { Tests.Equal("vfvf ", form.TestEditor.Text); }, 200);
             hotkey(0x33); add("MANUAL UK", delegate { Tests.Equal("мама ", form.TestEditor.Text); }, 200);
             hotkey(0x31); add("MANUAL EN", delegate { Tests.Equal("vfvf ", form.TestEditor.Text); }, 200);
@@ -219,10 +237,10 @@ namespace TriSwitch
                     new ReplacementRule { From = "hello", To = "Здравствуйте", Target = 1 } }, out error), error);
                 Tests.Check(Settings.Load(Path.Combine(directory, "test-preferences.json")).Replacements.Count == 3, "rules not persisted");
             }, 200);
-            type("brb "); add("CUSTOM phrase keeps active layout", delegate { Tests.Equal("Скоро вернусь ", form.TestEditor.Text); Tests.Check(Layouts.FromHandle(Native.GetKeyboardLayout(0)) == Language.English, "layout not preserved"); }, 200);
+            type("brb "); add("CUSTOM phrase keeps active layout", delegate { Tests.Equal("Скоро вернусь ", form.TestEditor.Text); Tests.Check(Native.InputLanguage(Native.GetKeyboardLayout(0)) == Language.English, "layout not preserved"); }, 200);
             combination(120, 6); add("CUSTOM undo removes entire phrase", delegate { Tests.Equal("brb ", form.TestEditor.Text); }, 200);
             add("Reset", reset, 150); type("brb "); add("UNDONE rule suppressed for session", delegate { Tests.Equal("brb ", form.TestEditor.Text); }, 200);
-            add("Reset", reset, 150); type("ukr "); add("CUSTOM target layout selected", delegate { Tests.Equal("Слава Україні ", form.TestEditor.Text); Tests.Check(Layouts.FromHandle(Native.GetKeyboardLayout(0)) == Language.Ukrainian, "UK not selected"); }, 200);
+            add("Reset", reset, 150); type("ukr "); add("CUSTOM target layout selected", delegate { Tests.Equal("Слава Україні ", form.TestEditor.Text); Tests.Check(Native.InputLanguage(Native.GetKeyboardLayout(0)) == Language.Ukrainian, "UK not selected"); }, 200);
             add("Reset", reset, 150); type("hello "); add("CUSTOM overrides dictionary word", delegate { Tests.Equal("Здравствуйте ", form.TestEditor.Text); }, 200);
             add("DISABLE custom rule", delegate { reset(); string error; Tests.Check(form.ApplyReplacements(new List<ReplacementRule> { new ReplacementRule { From = "ukr", To = "Слава Україні", Target = 2, Enabled = false } }, out error), error); }, 200);
             type("ukr "); add("DISABLED custom rule does not expand", delegate { Tests.Equal("ukr ", form.TestEditor.Text); }, 200);

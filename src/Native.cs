@@ -8,7 +8,7 @@ using System.Windows.Forms;
 
 namespace TriSwitch
 {
-    public static class Native
+    public static partial class Native
     {
         public const uint OwnTag = 0x54524953;
         internal const uint TestTag = 0x54524954;
@@ -57,12 +57,39 @@ namespace TriSwitch
         public static bool Down(int key) { return GetAsyncKeyState(key) < 0; }
         public static bool ModifiersDown { get { return Down(0x10) || Down(0x11) || Down(0x12) || Down(0x5b) || Down(0x5c); } }
 
+        public static Language? InputLanguage(IntPtr layout)
+        {
+            Language? language = Layouts.FromHandle(layout);
+            if (language.HasValue) return language;
+            // Windows can assign transient language IDs to an input profile.
+            // Identify its actual keyboard mapping, never treat the device word as a LANGID.
+            int id = (int)(layout.ToInt64() & 0xffff);
+            if (id < 0x2000 || id > 0x4c00 || (id & 0x3ff) != 0) return null;
+            const string keys = "qwertyuiopasdfghjklzxcvbnm";
+            var actual = new StringBuilder();
+            foreach (char key in keys)
+            {
+                uint vk = (uint)char.ToUpperInvariant(key);
+                var text = new StringBuilder(8);
+                if (ToUnicodeEx(vk, MapVirtualKeyEx(vk, 0, layout), new byte[256], text, 8, 4, layout) != 1) return null;
+                actual.Append(text[0]);
+            }
+            foreach (Language candidate in new[] { Language.English, Language.Russian, Language.Ukrainian })
+                if (actual.ToString() == Layouts.Convert(keys, Language.English, candidate)) return candidate;
+            return null;
+        }
+
         public static FocusStamp Focus()
         {
             IntPtr window = GetForegroundWindow(); uint process;
             uint thread = GetWindowThreadProcessId(window, out process);
             var info = new GuiInfo { Size = Marshal.SizeOf(typeof(GuiInfo)) };
             if (window == IntPtr.Zero || thread == 0 || !GetGUIThreadInfo(thread, ref info)) return new FocusStamp();
+            // Modern Notepad hosts its editor on a different thread from the outer window.
+            uint controlProcess;
+            uint controlThread = GetWindowThreadProcessId(info.Focus, out controlProcess);
+            if (controlThread == 0 || controlProcess != process) return new FocusStamp();
+            thread = controlThread;
             return new FocusStamp { Window = window, Control = info.Focus, Process = process, Thread = thread };
         }
         public static Input Key(ushort key, bool up)
@@ -178,7 +205,7 @@ namespace TriSwitch
             Array.Clear(handles, 0, handles.Length);
             int count = Native.GetKeyboardLayoutList(0, null); var all = new IntPtr[count];
             Native.GetKeyboardLayoutList(count, all);
-            foreach (IntPtr h in all) { Language? lang = Layouts.FromHandle(h); if (lang.HasValue && handles[(int)lang.Value] == IntPtr.Zero) handles[(int)lang.Value] = h; }
+            foreach (IntPtr h in all) { Language? lang = Native.InputLanguage(h); if (lang.HasValue && handles[(int)lang.Value] == IntPtr.Zero) handles[(int)lang.Value] = h; }
         }
         public bool Available(Language language) { return handles[(int)language] != IntPtr.Zero; }
         public string Status { get { return string.Join("   ·   ", new[] { Language.English, Language.Russian, Language.Ukrainian }.SelectStatus(this)); } }
@@ -201,7 +228,7 @@ namespace TriSwitch
         }
         public bool Switch(FocusStamp focus, Language language)
         {
-            return Available(language) && Native.PostMessage(focus.Window, 0x50, IntPtr.Zero, handles[(int)language]);
+            return focus.Same(Native.Focus()) && Available(language) && Native.PostMessage(focus.Control, 0x50, IntPtr.Zero, handles[(int)language]);
         }
     }
     internal static class CatalogExtensions

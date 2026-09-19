@@ -94,6 +94,32 @@ namespace TriSwitch
                 finally { if (File.Exists(path)) File.Delete(path); }
             });
             var ignored = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            test("Custom rule preserves lower, title and upper case", delegate
+            {
+                var r = Rule("Добрій", "Добрый", 1); r.PreserveCase = true;
+                var book = new ReplacementBook(new[] { r });
+                foreach (var pair in new[] { new[] { "добрій", "добрый" }, new[] { "Добрій", "Добрый" }, new[] { "ДОБРІЙ!", "ДОБРЫЙ!" }, new[] { "ДоБрІй", "Добрый" } })
+                {
+                    var result = book.Find(pair[0], Language.Ukrainian, ignored);
+                    Tests.Equal(pair[1], result.Text); Tests.Check(result.Language == Language.Russian, "lost target");
+                }
+            });
+            test("Case option survives copy and persistence; old rules stay literal", delegate
+            {
+                string path = Path.Combine(directory, "test-case-settings.json");
+                try
+                {
+                    File.WriteAllText(path, "{\"Replacements\":[{\"Enabled\":true,\"From\":\"brb\",\"To\":\"Be Right Back\",\"Target\":-1}]}");
+                    var s = Settings.Load(path); Tests.Check(!s.Replacements[0].PreserveCase, "legacy behavior changed");
+                    s.Replacements[0].PreserveCase = true; s.Copy().Save(path);
+                    var rule = Settings.Load(path).Replacements[0]; Tests.Check(rule.PreserveCase, "option lost");
+                    var book = new ReplacementBook(new[] { rule });
+                    Tests.Equal("be right back", book.Find("brb", Language.English, ignored).Text);
+                    Tests.Equal("Be right back", book.Find("Brb", Language.English, ignored).Text);
+                    Tests.Equal("BE RIGHT BACK", book.Find("BRB", Language.English, ignored).Text);
+                }
+                finally { if (File.Exists(path)) File.Delete(path); }
+            });
             test("Short custom trigger expands a phrase", delegate { var book = new ReplacementBook(new[] { Rule("brb", "Скоро вернусь") }); Suggestion s = book.Find("brb", Language.English, ignored); Tests.Equal("Скоро вернусь", s.Text); Tests.Check(s.PreserveLayout && s.Language == Language.English && s.Custom, "layout was changed"); });
             test("Replacement is case insensitive and literal", delegate { var book = new ReplacementBook(new[] { Rule("адр", "Улица Мира", 1) }); Suggestion s = book.Find("АДР", Language.Ukrainian, ignored); Tests.Equal("Улица Мира", s.Text); Tests.Check(s.Language == Language.Russian && !s.PreserveLayout, "wrong layout"); });
             test("Punctuation preserved with exact rule priority", delegate

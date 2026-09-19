@@ -57,7 +57,8 @@ namespace TriSwitch
         [DataMember] public string To = "";
         // -1 preserves the active layout; 0, 1, 2 correspond to EN, RU, UK.
         [DataMember] public int Target = -1;
-        public ReplacementRule Copy() { return new ReplacementRule { Enabled = Enabled, From = From, To = To, Target = Target }; }
+        [DataMember] public bool PreserveCase;
+        public ReplacementRule Copy() { return new ReplacementRule { Enabled = Enabled, From = From, To = To, Target = Target, PreserveCase = PreserveCase }; }
     }
 
     public sealed class ReplacementBook
@@ -91,7 +92,23 @@ namespace TriSwitch
                 if (bare == word || !rules.TryGetValue(bare, out rule)) return null;
                 suffix = word.Substring(bare.Length);
             }
-            return new Suggestion { Text = rule.To + suffix, Language = rule.Target < 0 ? source : (Language)rule.Target, PreserveLayout = rule.Target < 0, Custom = true };
+            return new Suggestion { Text = (rule.PreserveCase ? MatchCase(word.Substring(0, word.Length - suffix.Length), rule.To) : rule.To) + suffix, Language = rule.Target < 0 ? source : (Language)rule.Target, PreserveLayout = rule.Target < 0, Custom = true };
+        }
+
+        private static string MatchCase(string input, string replacement)
+        {
+            char[] letters = input.Where(c => char.IsUpper(c) || char.IsLower(c)).ToArray();
+            if (letters.Length == 0) return replacement;
+            if (letters.All(char.IsLower)) return replacement.ToLowerInvariant();
+            if (letters.All(char.IsUpper)) return replacement.ToUpperInvariant();
+            if (char.IsUpper(letters[0]) && letters.Skip(1).All(char.IsLower))
+            {
+                char[] result = replacement.ToLowerInvariant().ToCharArray();
+                for (int i = 0; i < result.Length; i++)
+                    if (char.IsLetter(result[i])) { result[i] = char.ToUpperInvariant(result[i]); break; }
+                return new string(result);
+            }
+            return replacement; // Mixed case has no unambiguous correspondence for phrases.
         }
     }
 

@@ -304,7 +304,7 @@ namespace TriSwitch
             if (e.Focus.Window == Handle && e.Focus.Control != TestEditor.Handle) { Reset(); return; }
             // Never replay a backlogged stream into a different field.
             if (watcher.Serial - e.Serial > 32) { Reset(); return; }
-            Language? language = Layouts.FromHandle(e.Layout);
+            Language? language = Native.InputLanguage(e.Layout);
             string identity;
             if (!language.HasValue || !guard.TryCheck(e.Focus, out identity)) { Reset(); return; }
             if (!currentFocus.Same(e.Focus) || currentIdentity != identity) Reset();
@@ -349,7 +349,7 @@ namespace TriSwitch
             if (!CanReplace()) { Reset(); return; }
             if (!preserveLayout && !catalog.Available(target)) { Notify("Раскладка " + Layouts.Names[(int)target] + " не установлена в Windows."); return; }
             string old = buffer.Word, suffix = buffer.Suffix; Language oldLanguage = buffer.Language;
-            if (!Native.Replace(old.Length + suffix.Length, replacement + suffix))
+            if (!Native.ReplaceChecked(currentFocus, old + suffix, replacement + suffix, () => watcher.Serial == pendingSerial && !Native.ModifiersDown))
             { Reset(); Notify("Windows не приняла замену. Проверьте текст: приложение может работать с правами администратора."); return; }
             undoWord = old; undoSuffix = suffix; undoLanguage = oldLanguage; undoAvailable = true;
             buffer.Word = replacement; buffer.Language = target;
@@ -360,7 +360,7 @@ namespace TriSwitch
         private void Undo()
         {
             if (!undoAvailable || !CanReplace()) { Reset(); return; }
-            if (!Native.Replace(buffer.Word.Length + buffer.Suffix.Length, undoWord + undoSuffix)) { Reset(); Notify("Windows не приняла отмену. Проверьте текст."); return; }
+            if (!Native.ReplaceChecked(currentFocus, buffer.Word + buffer.Suffix, undoWord + undoSuffix, () => watcher.Serial == pendingSerial && !Native.ModifiersDown)) { Reset(); Notify("Windows не приняла отмену. Проверьте текст."); return; }
             // Do not repeat the same rejected automatic correction during this run.
             detector.Ignored.Add(undoWord.TrimEnd('.', ',', '!', '?', ':', ';'));
             buffer.Word = undoWord; buffer.Suffix = undoSuffix; buffer.Language = undoLanguage; undoAvailable = false;
@@ -418,6 +418,7 @@ namespace TriSwitch
             if (args.Contains("--integration-test")) return IntegrationTests.Run(AppDomain.CurrentDomain.BaseDirectory);
             if (args.Contains("--ui-smoke-test")) return IntegrationTests.Preview(AppDomain.CurrentDomain.BaseDirectory);
             if (args.Contains("--startup-test")) return IntegrationTests.Startup(AppDomain.CurrentDomain.BaseDirectory);
+            if (args.Contains("--notepad-test")) return NotepadTests.Run(AppDomain.CurrentDomain.BaseDirectory);
             bool created;
             using (var mutex = new Mutex(true, "Local\\TriSwitch.3Languages", out created))
             {

@@ -68,7 +68,7 @@ namespace TriSwitch
             var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4 };
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize)); layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize)); layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            layout.Controls.Add(new Label { AutoSize = true, Dock = DockStyle.Fill, Text = "После пробела: короткое слово → ваш текст. Например: brb → Скоро вернусь.\r\nБез учёта регистра; результат вставляется как записан. Свои правила имеют приоритет над словарём." }, 0, 0);
+            layout.Controls.Add(new Label { AutoSize = true, Dock = DockStyle.Fill, Text = "После пробела: короткое слово → ваш текст. Например: brb → Скоро вернусь.\r\n«Сохранять регистр»: добрій → добрый, Добрій → Добрый, ДОБРІЙ → ДОБРЫЙ." }, 0, 0);
             replacementGrid = new DataGridView { Dock = DockStyle.Fill, BackgroundColor = Color.White, RowHeadersVisible = false,
                 AllowUserToAddRows = true, AllowUserToDeleteRows = true, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
                 AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.AllCells, ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize,
@@ -80,9 +80,10 @@ namespace TriSwitch
             replacementGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "To", HeaderText = "На что заменить", FillWeight = 42, MaxInputLength = 512 });
             replacementGrid.Columns.Add(new DataGridViewComboBoxColumn { Name = "Target", HeaderText = "Раскладка", FillWeight = 25, DisplayMember = "Name", ValueMember = "Id",
                 DataSource = new[] { new LayoutChoice { Id = -1, Name = "Не менять" }, new LayoutChoice { Id = 0, Name = "EN" }, new LayoutChoice { Id = 1, Name = "RU" }, new LayoutChoice { Id = 2, Name = "UK" } } });
+            replacementGrid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "PreserveCase", HeaderText = "Сохранять регистр", FillWeight = 20, MinimumWidth = 100 });
             replacementGrid.DefaultValuesNeeded += delegate(object sender, DataGridViewRowEventArgs e) { e.Row.Cells["Enabled"].Value = true; e.Row.Cells["Target"].Value = -1; };
             replacementGrid.DataError += delegate(object sender, DataGridViewDataErrorEventArgs e) { e.ThrowException = false; replacementFeedback.Text = "Выберите раскладку из списка."; };
-            foreach (ReplacementRule rule in settings.Replacements) replacementGrid.Rows.Add(rule.Enabled, rule.From, rule.To, rule.Target);
+            foreach (ReplacementRule rule in settings.Replacements) replacementGrid.Rows.Add(rule.Enabled, rule.From, rule.To, rule.Target, rule.PreserveCase);
             layout.Controls.Add(replacementGrid, 0, 1);
             var buttons = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill };
             var save = PreferenceButton("Сохранить замены");
@@ -96,7 +97,7 @@ namespace TriSwitch
                     {
                         if (row.IsNewRow) continue;
                         values.Add(new ReplacementRule { Enabled = Convert.ToBoolean(row.Cells["Enabled"].Value ?? true),
-                            From = Convert.ToString(row.Cells["From"].Value).Trim(), To = Convert.ToString(row.Cells["To"].Value).Trim(), Target = Convert.ToInt32(row.Cells["Target"].Value ?? -1) });
+                            From = Convert.ToString(row.Cells["From"].Value).Trim(), To = Convert.ToString(row.Cells["To"].Value).Trim(), Target = Convert.ToInt32(row.Cells["Target"].Value ?? -1), PreserveCase = Convert.ToBoolean(row.Cells["PreserveCase"].Value ?? false) });
                     }
                     string error;
                     if (!ApplyReplacements(values, out error)) throw new ArgumentException(error);
