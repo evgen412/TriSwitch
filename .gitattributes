@@ -1,0 +1,5 @@
+* text=auto
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+# Keep third-party dictionary files byte-for-byte as downloaded.
+dictionaries/** -text
