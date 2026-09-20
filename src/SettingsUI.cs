@@ -108,16 +108,7 @@ namespace TriSwitch
             var add = PreferenceButton("Добавить"); add.Click += delegate { int row = replacementGrid.Rows.Add(true, "", "", -1); replacementGrid.CurrentCell = replacementGrid.Rows[row].Cells["From"]; replacementGrid.BeginEdit(true); };
             var remove = PreferenceButton("Удалить выбранные"); remove.Click += delegate { foreach (DataGridViewRow row in replacementGrid.SelectedRows.Cast<DataGridViewRow>().ToArray()) if (!row.IsNewRow) replacementGrid.Rows.Remove(row); };
             foreach (Button button in new[] { save, add, remove })
-            {
-                button.FlatStyle = FlatStyle.Flat;
-                button.UseVisualStyleBackColor = false;
-                button.BackColor = Theme.TabBackground;
-                button.ForeColor = Theme.Heading;
-                button.FlatAppearance.BorderColor = Theme.AccentBorder;
-                button.FlatAppearance.BorderSize = 1;
-                button.FlatAppearance.MouseOverBackColor = Color.FromArgb(204, 222, 250);
-                button.FlatAppearance.MouseDownBackColor = Color.FromArgb(178, 204, 242);
-            }
+                Theme.HighlightButton(button);
             buttons.Controls.Add(save); buttons.Controls.Add(add); buttons.Controls.Add(remove); layout.Controls.Add(buttons, 0, 2);
             replacementFeedback = new Label { AutoSize = true, Dock = DockStyle.Fill, Text = "Срабатывают по пробелу. Исключения, пауза и отмена действуют и для своих замен." };
             layout.Controls.Add(replacementFeedback, 0, 3); page.Controls.Add(layout); return page;

@@ -267,9 +267,11 @@ namespace TriSwitch
             var words = new TextBox { Multiline = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, Text = settings.IgnoreWords };
             layout.Controls.Add(programs, 0, 2); layout.Controls.Add(words, 1, 2);
             var save = new Button { Text = "Сохранить", AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Padding = new Padding(12, 5, 12, 5) };
+            Theme.HighlightButton(save);
             save.Click += delegate { settings.Exclusions = programs.Text; settings.IgnoreWords = words.Text; Configure(); Reset(); if (SaveSettings()) stateLabel.Text = "Исключения сохранены."; };
             layout.Controls.Add(save, 0, 3);
             var refresh = new Button { Text = "Обновить список раскладок", AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Padding = new Padding(12, 5, 12, 5) };
+            Theme.HighlightButton(refresh);
             refresh.Click += delegate { catalog.Refresh(); layoutLabel.Text = catalog.Status; }; layout.Controls.Add(refresh, 1, 3);
             page.Controls.Add(layout); return page;
         }
