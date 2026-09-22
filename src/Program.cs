@@ -24,7 +24,7 @@ namespace TriSwitch
             Excluded = new HashSet<string>(text.Split(new[] { '\r', '\n', ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
                 .Select(s => Path.GetFileNameWithoutExtension(s.Trim())), StringComparer.OrdinalIgnoreCase);
         }
-        public bool TryCheck(FocusStamp expected, out string identity, bool selectedText = false)
+        public bool TryCheck(FocusStamp expected, out string identity)
         {
             identity = null;
             if (!expected.Same(Native.Focus())) return false;
@@ -47,21 +47,31 @@ namespace TriSwitch
                 object password = element.GetCurrentPropertyValue(AutomationElement.IsPasswordProperty, true);
                 if (!(password is bool) || (bool)password || !element.Current.IsEnabled || !element.Current.HasKeyboardFocus) return false;
                 object pattern;
-                bool valueEditable = element.TryGetCurrentPattern(ValuePattern.Pattern, out pattern) && !((ValuePattern)pattern).Current.IsReadOnly;
+                bool? valueReadOnly = element.TryGetCurrentPattern(ValuePattern.Pattern, out pattern)
+                    ? (bool?)((ValuePattern)pattern).Current.IsReadOnly : null;
                 bool nativeEditable = edit && element.Current.NativeWindowHandle == expected.Control.ToInt64();
-                bool documentEditable = false;
-                if (selectedText && element.Current.ControlType == ControlType.Document && element.TryGetCurrentPattern(TextPattern.Pattern, out pattern))
+                ControlType kind = element.Current.ControlType;
+                bool? rangeReadOnly = null;
+                // Word and contenteditable fields may expose Document + TextPattern,
+                // without ValuePattern. An empty selection is the insertion point and
+                // must be checked for ordinary typing as well as selected-text commands.
+                if (kind == ControlType.Document && element.TryGetCurrentPattern(TextPattern.Pattern, out pattern))
                 {
                     TextPatternRange[] ranges = ((TextPattern)pattern).GetSelection();
-                    object readOnly = ranges.Length == 1 ? ranges[0].GetAttributeValue(TextPattern.IsReadOnlyAttribute) : null;
-                    documentEditable = readOnly is bool && !(bool)readOnly;
+                    object readOnly = ranges != null && ranges.Length == 1 ? ranges[0].GetAttributeValue(TextPattern.IsReadOnlyAttribute) : null;
+                    if (readOnly is bool) rangeReadOnly = (bool)readOnly;
                 }
-                if (!valueEditable && !nativeEditable && !documentEditable && element.Current.ControlType != ControlType.Edit) return false;
-                if (element.TryGetCurrentPattern(ValuePattern.Pattern, out pattern) && ((ValuePattern)pattern).Current.IsReadOnly) return false;
+                if (!AllowsEditing(kind, nativeEditable, valueReadOnly, rangeReadOnly)) return false;
                 identity = string.Join(".", element.GetRuntimeId().Select(n => n.ToString()).ToArray());
                 return expected.Same(Native.Focus());
             }
             catch (Exception) { return false; } // Fail closed if accessibility is unavailable.
+        }
+        internal static bool AllowsEditing(ControlType kind, bool nativeEditable, bool? valueReadOnly, bool? rangeReadOnly)
+        {
+            if (valueReadOnly == true || rangeReadOnly == true) return false;
+            return valueReadOnly == false || nativeEditable || kind == ControlType.Edit
+                || (kind == ControlType.Document && rangeReadOnly == false);
         }
         public bool TailMatches(string expected)
         {
@@ -530,6 +540,7 @@ namespace TriSwitch
         public static int Main(string[] args)
         {
             Application.EnableVisualStyles(); Application.SetCompatibleTextRenderingDefault(false);
+            if (args.Contains("--input-diagnostics")) return InputDiagnostics.Run(AppDomain.CurrentDomain.BaseDirectory, args.Contains("--check-test-tail"));
             if (args.Contains("--self-test")) return Tests.Run(AppDomain.CurrentDomain.BaseDirectory);
             if (args.Contains("--integration-test")) return IntegrationTests.Run(AppDomain.CurrentDomain.BaseDirectory);
             if (args.Contains("--spelling-test")) return SpellingIntegrationTests.Run(AppDomain.CurrentDomain.BaseDirectory);

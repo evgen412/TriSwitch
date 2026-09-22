@@ -63,7 +63,7 @@ namespace TriSwitch
         internal static SelectionSnapshot Capture(FocusStamp focus, FocusGuard guard)
         {
             string identity;
-            if (!guard.TryCheck(focus, out identity, true)) return null;
+            if (!guard.TryCheck(focus, out identity)) return null;
             try
             {
                 AutomationElement element = AutomationElement.FocusedElement; object pattern;
@@ -78,7 +78,7 @@ namespace TriSwitch
                 if (snapshot.NativeEditor && (!Native.ReadSelection(focus.Control, out snapshot.Start, out snapshot.End)
                     || snapshot.End - snapshot.Start != text.Length)) return null;
                 string checkedIdentity;
-                return guard.TryCheck(focus, out checkedIdentity, true) && identity == checkedIdentity ? snapshot : null;
+                return guard.TryCheck(focus, out checkedIdentity) && identity == checkedIdentity ? snapshot : null;
             }
             catch (Exception) { return null; }
         }
