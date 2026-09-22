@@ -36,6 +36,7 @@ namespace TriSwitch
             grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); layout.Controls.Add(grid, 0, 1);
             var buttons = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill };
             var save = PreferenceButton("Сохранить клавиши");
+            Theme.HighlightButton(save);
             save.Click += delegate
             {
                 string error;
@@ -44,6 +45,7 @@ namespace TriSwitch
                 hotkeyFeedback.Text = ok ? "Сохранено. Новые сочетания уже работают." : error;
             };
             var defaults = PreferenceButton("По умолчанию");
+            Theme.HighlightButton(defaults);
             defaults.Click += delegate { HotkeyBinding[] values = HotkeyBinding.Defaults(); for (int i = 0; i < values.Length; i++) hotkeyBoxes[i].Binding = values[i]; hotkeyFeedback.Text = "Нажмите «Сохранить клавиши», чтобы применить."; };
             buttons.Controls.Add(save); buttons.Controls.Add(defaults); layout.Controls.Add(buttons, 0, 2);
             hotkeyFeedback = new Label { AutoSize = true, Dock = DockStyle.Fill, Text = "Изменения применяются после сохранения. Занятые сочетания не заменят прежние." };

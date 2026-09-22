@@ -96,6 +96,43 @@ namespace TriSwitch
                 finally { detector.Ignored.Remove("ПрИвТ"); }
                 Correct(detector, "Привт!", Language.Russian, "Привет!");
             });
+            test("Spelling-only exclusions: parsing, cached corrections and removal in RU UK EN", delegate
+            {
+                Correct(detector, "привт", Language.Russian, "привет");
+                Correct(detector, "дякуую", Language.Ukrainian, "дякую");
+                Correct(detector, "dictinary", Language.English, "dictionary");
+                var words = SpellChecker.ParseIgnoredWords("  ПрИвТ!\r\nпривт\tДЯКУУЮ…; DICTINARY, ?! ");
+                Tests.Check(words.Count == 3, "duplicates or punctuation-only entries retained");
+                try
+                {
+                    detector.SpellingIgnored.UnionWith(words);
+                    Unchanged(detector, Language.Russian, "ПРИВТ!", "Привт", "привт?!»,");
+                    Unchanged(detector, Language.Ukrainian, "ДЯКУУЮ…", "Дякуую");
+                    Unchanged(detector, Language.English, "Dictinary.)", "DICTINARY");
+                    Correct(detector, "пожалуста", Language.Russian, "пожалуйста");
+                }
+                finally { detector.SpellingIgnored.Clear(); }
+                Correct(detector, "Привт!", Language.Russian, "Привет!");
+                Correct(detector, "Дякуую…", Language.Ukrainian, "Дякую…");
+                Correct(detector, "Dictinary", Language.English, "Dictionary");
+            });
+            test("Spelling-only exclusions preserve layout correction and custom rules", delegate
+            {
+                try
+                {
+                    detector.SpellingIgnored.UnionWith(new[] { "ghbdtn", "привт", "привет" });
+                    Suggestion layout = detector.Suggest("ghbdtn", Language.English, Layouts.Convert);
+                    Tests.Check(layout != null, "spelling exclusion blocked layout correction");
+                    Tests.Equal("привет", layout.Text);
+                    var rules = new ReplacementBook(new[] { new ReplacementRule { From = "привт", To = "Моя замена" } });
+                    Suggestion custom = rules.Find("Привт!", Language.Russian, detector.Ignored);
+                    Tests.Check(custom != null, "spelling exclusion blocked explicit rule");
+                    Tests.Equal("Моя замена!", custom.Text);
+                    detector.SpellingIgnored.Remove("привт");
+                    Correct(detector, "привт", Language.Russian, "привет");
+                }
+                finally { detector.SpellingIgnored.Clear(); }
+            });
             test("Spelling: ignored token with punctuation", delegate
             {
                 try

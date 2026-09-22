@@ -127,9 +127,42 @@ namespace TriSwitch
             }, 350);
             type("ghbdn ");
             add("Spelling resumes immediately", delegate { expect("привет ", Language.Russian); }, 500);
+            add("Save spelling exceptions through settings controls", delegate
+            {
+                var tabs = form.Controls[0].Controls.OfType<TabControl>().Single(); tabs.SelectedIndex = 4;
+                form.TestSpellingIgnoreWords.Text = "ПрИвТ!\r\nghbdtn";
+                form.TestSaveExclusions.PerformClick();
+                Tests.Equal("ПрИвТ!\r\nghbdtn", Settings.Load(settingsPath).SpellingIgnoreWords);
+                form.FocusTestEditor(); reset(Language.Russian);
+            }, 350);
+            type("ghbdn ");
+            add("Spelling exception takes effect immediately after cached correction", delegate { expect("привт ", Language.Russian); }, 500);
+            add("Failed save keeps previous exceptions", delegate
+            {
+                string error;
+                using (var locked = new FileStream(settingsPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                    Tests.Check(!form.ApplyExclusions("", "", "", out error) && !String.IsNullOrEmpty(error), "locked settings were accepted");
+                Tests.Equal("ПрИвТ!\r\nghbdtn", Settings.Load(settingsPath).SpellingIgnoreWords);
+                reset(Language.Russian);
+            }, 350);
+            type("ghbdn ");
+            add("Failed save leaves active spelling exceptions intact", delegate { expect("привт ", Language.Russian); }, 500);
+            add("Reset English input with spelling exception", delegate { reset(Language.English); }, 300);
+            type("ghbdtn ");
+            add("Spelling exception still permits layout correction", delegate { expect("привет ", Language.Russian); }, 500);
+            add("Remove spelling exception through settings controls", delegate
+            {
+                var tabs = form.Controls[0].Controls.OfType<TabControl>().Single(); tabs.SelectedIndex = 4;
+                form.TestSpellingIgnoreWords.Clear(); form.TestSaveExclusions.PerformClick();
+                Tests.Equal("", Settings.Load(settingsPath).SpellingIgnoreWords);
+                form.FocusTestEditor(); reset(Language.Russian);
+            }, 350);
+            type("ghbdn ");
+            add("Removing exception resumes spelling correction", delegate { expect("привет ", Language.Russian); }, 500);
             add("Custom replacement before spelling", delegate
             {
                 string error;
+                Tests.Check(form.ApplyExclusions("", "", "привт", out error), error);
                 Tests.Check(form.ApplyReplacements(new List<ReplacementRule> {
                     new ReplacementRule { From = "привт", To = "Моя замена" } }, out error), error);
                 reset(Language.Russian);

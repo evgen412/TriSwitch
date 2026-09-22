@@ -202,6 +202,7 @@ namespace TriSwitch
         private readonly WordDictionary[] dictionaries;
         private readonly SpellChecker[] spellCheckers;
         public readonly HashSet<string> Ignored = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        public readonly HashSet<string> SpellingIgnored = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         public Detector(string directory)
         {
             dictionaries = new[] {
@@ -215,7 +216,7 @@ namespace TriSwitch
         public Suggestion SuggestSpelling(string word, Language language)
         {
             if (String.IsNullOrEmpty(word) || !Enum.IsDefined(typeof(Language), language)) return null;
-            return spellCheckers[(int)language].Suggest(word, Ignored);
+            return spellCheckers[(int)language].Suggest(word, Ignored, SpellingIgnored);
         }
         private bool CanCorrect(string word, Language language)
         {

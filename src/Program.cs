@@ -103,6 +103,8 @@ namespace TriSwitch
         internal TextBox TestEditor;
         internal ComboBox TestCyrillicPriority;
         internal CheckBox TestSpellCheck;
+        internal TextBox TestSpellingIgnoreWords;
+        internal Button TestSaveExclusions;
         internal Action<string> TestTrace;
         private void TraceTest(string stage) { if (testMode && TestTrace != null) TestTrace(stage); }
         internal bool IsWatching { get { return watcher != null; } }
@@ -189,6 +191,8 @@ namespace TriSwitch
             replacements = new ReplacementBook(settings.Replacements);
             guard.Configure(settings.Exclusions); detector.Ignored.Clear();
             foreach (string word in settings.IgnoreWords.Split(new[] { '\r', '\n', ' ', ',', ';' }, StringSplitOptions.RemoveEmptyEntries)) detector.Ignored.Add(word);
+            detector.SpellingIgnored.Clear();
+            detector.SpellingIgnored.UnionWith(SpellChecker.ParseIgnoredWords(settings.SpellingIgnoreWords));
         }
         private void BuildUI()
         {
@@ -231,6 +235,7 @@ namespace TriSwitch
             {
                 Language target = language;
                 var button = new Button { Text = "→ " + Layouts.Names[(int)target], AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Padding = new Padding(12, 5, 12, 5) };
+                Theme.HighlightButton(button);
                 button.Click += delegate
                 {
                     Reset(); bool selected = editor.SelectionLength > 0; string value = selected ? editor.SelectedText : editor.Text;
@@ -239,6 +244,7 @@ namespace TriSwitch
                 }; row.Controls.Add(button);
             }
             var copy = new Button { Text = "Копировать", AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Padding = new Padding(12, 5, 12, 5) };
+            Theme.HighlightButton(copy);
             copy.Click += delegate { try { if (editor.Text.Length > 0) Clipboard.SetText(editor.Text); } catch (Exception) { MessageBox.Show(this, "Буфер обмена занят. Попробуйте ещё раз."); } };
             row.Controls.Add(copy); layout.Controls.Add(row, 0, 2);
             layout.Controls.Add(new Label { Text = "Текст обрабатывается локально и не сохраняется.", Dock = DockStyle.Fill, AutoSize = true, ForeColor = Color.DimGray }, 0, 3);
@@ -315,18 +321,40 @@ namespace TriSwitch
             priorityPanel.Controls.Add(spellingHelp, 0, 3); priorityPanel.SetColumnSpan(spellingHelp, 2);
             layout.Controls.Add(priorityPanel, 0, 1); layout.SetColumnSpan(priorityPanel, 2);
             layout.Controls.Add(new Label { Text = "Не работать в программах\r\nИмя процесса, по одному на строку", Dock = DockStyle.Fill, AutoSize = true }, 0, 2);
-            layout.Controls.Add(new Label { Text = "Не исправлять слова автоматически\r\nПо одному на строку", Dock = DockStyle.Fill, AutoSize = true }, 1, 2);
+            layout.Controls.Add(new Label { Text = "Не исправлять слова · по одному на строку\r\nБез учёта регистра", Dock = DockStyle.Fill, AutoSize = true }, 1, 2);
             var programs = new TextBox { Multiline = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, Text = settings.Exclusions };
-            var words = new TextBox { Multiline = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, Text = settings.IgnoreWords };
-            layout.Controls.Add(programs, 0, 3); layout.Controls.Add(words, 1, 3);
+            var words = new TextBox { Multiline = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, Text = settings.IgnoreWords, AccessibleName = "Исключения для всех автозамен" };
+            var spellingWords = new TextBox { Multiline = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill,
+                Text = settings.SpellingIgnoreWords, AccessibleName = "Не исправлять орфографию", AcceptsReturn = true };
+            var wordTabs = new ContrastTabControl { Dock = DockStyle.Fill };
+            var allWordsPage = new TabPage("Все автозамены") { BackColor = Color.White, Padding = new Padding(3) };
+            var spellingWordsPage = new TabPage("Орфография") { BackColor = Color.White, Padding = new Padding(3) };
+            allWordsPage.Controls.Add(words); spellingWordsPage.Controls.Add(spellingWords);
+            wordTabs.TabPages.Add(allWordsPage); wordTabs.TabPages.Add(spellingWordsPage); wordTabs.SelectedIndex = 1;
+            layout.Controls.Add(programs, 0, 3); layout.Controls.Add(wordTabs, 1, 3);
             var save = new Button { Text = "Сохранить", AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Padding = new Padding(12, 5, 12, 5) };
             Theme.HighlightButton(save);
-            save.Click += delegate { settings.Exclusions = programs.Text; settings.IgnoreWords = words.Text; Configure(); Reset(); if (SaveSettings()) stateLabel.Text = "Исключения сохранены."; };
+            save.Click += delegate
+            {
+                string error;
+                stateLabel.Text = ApplyExclusions(programs.Text, words.Text, spellingWords.Text, out error)
+                    ? "Исключения сохранены. Список «Орфография» пропускает только исправление опечаток."
+                    : "Не удалось сохранить исключения: " + error;
+            };
+            if (testMode) { TestSpellingIgnoreWords = spellingWords; TestSaveExclusions = save; }
             layout.Controls.Add(save, 0, 4);
             var refresh = new Button { Text = "Обновить список раскладок", AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Padding = new Padding(12, 5, 12, 5) };
             Theme.HighlightButton(refresh);
             refresh.Click += delegate { catalog.Refresh(); layoutLabel.Text = catalog.Status; }; layout.Controls.Add(refresh, 1, 4);
             page.Controls.Add(layout); return page;
+        }
+        internal bool ApplyExclusions(string programs, string words, string spellingWords, out string error)
+        {
+            error = null;
+            Settings next = settings.Copy(); next.Exclusions = programs; next.IgnoreWords = words; next.SpellingIgnoreWords = spellingWords;
+            try { next.Save(settingsPath); }
+            catch (Exception e) { error = e.Message; return false; }
+            settings = next; Configure(); Reset(); return true;
         }
         internal bool ApplyCyrillicPriority(Language language, out string error)
         {

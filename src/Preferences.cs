@@ -129,12 +129,13 @@ namespace TriSwitch
         [DataMember] public Language CyrillicPriority = Language.Russian;
         [DataMember] public string Exclusions = "Code\r\ndevenv\r\nWindowsTerminal\r\npowershell\r\npwsh\r\ncmd\r\nconhost\r\nmstsc\r\nCredentialUIBroker\r\nKeePass\r\nKeePassXC\r\n1Password\r\nBitwarden";
         [DataMember] public string IgnoreWords = "";
+        [DataMember] public string SpellingIgnoreWords = "";
         [DataMember] public HotkeyBinding[] Hotkeys = HotkeyBinding.Defaults();
         [DataMember] public List<ReplacementRule> Replacements = new List<ReplacementRule>();
         [OnDeserializing] private void Initialize(StreamingContext context)
-        { var defaults = new Settings(); Automatic = defaults.Automatic; SpellCheck = defaults.SpellCheck; CyrillicPriority = defaults.CyrillicPriority; Exclusions = defaults.Exclusions; IgnoreWords = ""; Hotkeys = defaults.Hotkeys; Replacements = defaults.Replacements; }
+        { var defaults = new Settings(); Automatic = defaults.Automatic; SpellCheck = defaults.SpellCheck; CyrillicPriority = defaults.CyrillicPriority; Exclusions = defaults.Exclusions; IgnoreWords = ""; SpellingIgnoreWords = ""; Hotkeys = defaults.Hotkeys; Replacements = defaults.Replacements; }
         public Settings Copy()
-        { return new Settings { Automatic = Automatic, SpellCheck = SpellCheck, CyrillicPriority = CyrillicPriority, Exclusions = Exclusions, IgnoreWords = IgnoreWords, Hotkeys = Hotkeys.Select(b => b.Copy()).ToArray(), Replacements = Replacements.Select(r => r.Copy()).ToList() }; }
+        { return new Settings { Automatic = Automatic, SpellCheck = SpellCheck, CyrillicPriority = CyrillicPriority, Exclusions = Exclusions, IgnoreWords = IgnoreWords, SpellingIgnoreWords = SpellingIgnoreWords, Hotkeys = Hotkeys.Select(b => b.Copy()).ToArray(), Replacements = Replacements.Select(r => r.Copy()).ToList() }; }
         private void ValidateCyrillicPriority()
         {
             if (CyrillicPriority != Language.Russian && CyrillicPriority != Language.Ukrainian)
@@ -149,7 +150,7 @@ namespace TriSwitch
             {
                 var value = (Settings)new DataContractJsonSerializer(typeof(Settings)).ReadObject(stream);
                 if (value == null) throw new InvalidDataException("Файл настроек пуст.");
-                value.Exclusions = value.Exclusions ?? ""; value.IgnoreWords = value.IgnoreWords ?? "";
+                value.Exclusions = value.Exclusions ?? ""; value.IgnoreWords = value.IgnoreWords ?? ""; value.SpellingIgnoreWords = value.SpellingIgnoreWords ?? "";
                 value.Hotkeys = HotkeyBinding.Upgrade(value.Hotkeys); value.Replacements = value.Replacements ?? new List<ReplacementRule>();
                 value.ValidateCyrillicPriority(); HotkeyBinding.Validate(value.Hotkeys); new ReplacementBook(value.Replacements);
                 return value;

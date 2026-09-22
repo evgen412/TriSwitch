@@ -26,12 +26,24 @@ namespace TriSwitch
             this.dictionary = dictionary; this.language = language; alphabet = Alphabets[(int)language];
         }
 
-        public Suggestion Suggest(string word, HashSet<string> ignored)
+        internal static HashSet<string> ParseIgnoredWords(string text)
+        {
+            var words = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string token in (text ?? "").Split(new[] { '\r', '\n', '\t', ' ', ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                string word = token.TrimEnd(TrailingPunctuation);
+                if (word.Length > 0) words.Add(word);
+            }
+            return words;
+        }
+
+        public Suggestion Suggest(string word, HashSet<string> ignored, ISet<string> spellingIgnored = null)
         {
             // Bounds are checked before allocating or enumerating candidates.
             if (word.Length > 64) return null;
             string bare = word.TrimEnd(TrailingPunctuation);
             if (bare.Length < 4 || bare.Length > 32 || ignored.Contains(word) || ignored.Contains(bare)) return null;
+            if (spellingIgnored != null && (spellingIgnored.Contains(word) || spellingIgnored.Contains(bare))) return null;
             string lower = bare.ToLowerInvariant();
             bool allLower = true, allUpper = true, title = true;
             for (int i = 0; i < bare.Length; i++)
