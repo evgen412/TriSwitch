@@ -116,15 +116,16 @@ namespace TriSwitch
     public sealed class Settings
     {
         [DataMember] public bool Automatic = true;
+        [DataMember] public bool SpellCheck = true;
         [DataMember] public Language CyrillicPriority = Language.Russian;
         [DataMember] public string Exclusions = "Code\r\ndevenv\r\nWindowsTerminal\r\npowershell\r\npwsh\r\ncmd\r\nconhost\r\nmstsc\r\nCredentialUIBroker\r\nKeePass\r\nKeePassXC\r\n1Password\r\nBitwarden";
         [DataMember] public string IgnoreWords = "";
         [DataMember] public HotkeyBinding[] Hotkeys = HotkeyBinding.Defaults();
         [DataMember] public List<ReplacementRule> Replacements = new List<ReplacementRule>();
         [OnDeserializing] private void Initialize(StreamingContext context)
-        { var defaults = new Settings(); Automatic = defaults.Automatic; CyrillicPriority = defaults.CyrillicPriority; Exclusions = defaults.Exclusions; IgnoreWords = ""; Hotkeys = defaults.Hotkeys; Replacements = defaults.Replacements; }
+        { var defaults = new Settings(); Automatic = defaults.Automatic; SpellCheck = defaults.SpellCheck; CyrillicPriority = defaults.CyrillicPriority; Exclusions = defaults.Exclusions; IgnoreWords = ""; Hotkeys = defaults.Hotkeys; Replacements = defaults.Replacements; }
         public Settings Copy()
-        { return new Settings { Automatic = Automatic, CyrillicPriority = CyrillicPriority, Exclusions = Exclusions, IgnoreWords = IgnoreWords, Hotkeys = Hotkeys.Select(b => b.Copy()).ToArray(), Replacements = Replacements.Select(r => r.Copy()).ToList() }; }
+        { return new Settings { Automatic = Automatic, SpellCheck = SpellCheck, CyrillicPriority = CyrillicPriority, Exclusions = Exclusions, IgnoreWords = IgnoreWords, Hotkeys = Hotkeys.Select(b => b.Copy()).ToArray(), Replacements = Replacements.Select(r => r.Copy()).ToList() }; }
         private void ValidateCyrillicPriority()
         {
             if (CyrillicPriority != Language.Russian && CyrillicPriority != Language.Ukrainian)

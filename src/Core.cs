@@ -61,13 +61,41 @@ namespace TriSwitch
             public Regex Condition;
             public string Reverse(string word)
             {
-                if (Prefix ? !word.StartsWith(Add, StringComparison.Ordinal) : !word.EndsWith(Add, StringComparison.Ordinal)) return null;
-                string root = Prefix ? Strip + word.Substring(Add.Length) : word.Substring(0, word.Length - Add.Length) + Strip;
-                return Condition.IsMatch(root) ? root : null;
+                return Prefix ? Strip + word.Substring(Add.Length) : word.Substring(0, word.Length - Add.Length) + Strip;
+            }
+        }
+        // Walk only affixes that match the edge of this word. Spelling checks
+        // perform many membership lookups; scanning every Hunspell rule for
+        // every candidate would block keyboard input on the UI thread.
+        private sealed class RuleIndex
+        {
+            private readonly Dictionary<char, RuleIndex> next = new Dictionary<char, RuleIndex>();
+            private readonly List<Rule> entries = new List<Rule>();
+            public void Add(Rule rule)
+            {
+                RuleIndex node = this;
+                for (int i = 0; i < rule.Add.Length; i++)
+                {
+                    char c = rule.Add[rule.Prefix ? i : rule.Add.Length - i - 1];
+                    RuleIndex child;
+                    if (!node.next.TryGetValue(c, out child)) node.next[c] = child = new RuleIndex();
+                    node = child;
+                }
+                node.entries.Add(rule);
+            }
+            public IEnumerable<Rule> Matching(string word, bool prefix)
+            {
+                RuleIndex node = this;
+                foreach (Rule rule in node.entries) yield return rule;
+                for (int i = 0; i < word.Length; i++)
+                {
+                    if (!node.next.TryGetValue(word[prefix ? i : word.Length - i - 1], out node)) yield break;
+                    foreach (Rule rule in node.entries) yield return rule;
+                }
             }
         }
         private readonly Dictionary<string, string> words = new Dictionary<string, string>(StringComparer.Ordinal);
-        private readonly List<Rule> rules = new List<Rule>();
+        private readonly RuleIndex prefixes = new RuleIndex(), suffixes = new RuleIndex();
         private readonly Dictionary<string, bool> cache = new Dictionary<string, bool>();
         private readonly HashSet<string> blocked = new HashSet<string>(StringComparer.Ordinal);
         private string needAffix, forbidden, onlyCompound;
@@ -88,9 +116,10 @@ namespace TriSwitch
                 if (p.Length < 5) continue;
                 string add = p[3].Split('/')[0];
                 bool isCross; cross.TryGetValue(p[0] + p[1], out isCross);
-                rules.Add(new Rule { Flag = p[1], Prefix = p[0] == "PFX", Cross = isCross,
+                var rule = new Rule { Flag = p[1], Prefix = p[0] == "PFX", Cross = isCross,
                     Strip = p[2] == "0" ? "" : p[2], Add = add == "0" ? "" : add,
-                    Condition = new Regex(p[0] == "PFX" ? "^(?:" + p[4] + ")" : "(?:" + p[4] + ")$", RegexOptions.CultureInvariant) });
+                    Condition = new Regex(p[0] == "PFX" ? "^(?:" + p[4] + ")" : "(?:" + p[4] + ")$", RegexOptions.CultureInvariant) };
+                (rule.Prefix ? prefixes : suffixes).Add(rule);
             }
             foreach (string raw in File.ReadLines(path, Encoding.UTF8).Skip(1))
             {
@@ -116,31 +145,41 @@ namespace TriSwitch
         public bool Contains(string value)
         {
             string word = value.ToLowerInvariant().Replace('’', '\'').Replace('ʼ', '\'');
+            return ContainsNormalized(word, true);
+        }
+        internal bool ContainsNormalized(string word, bool remember)
+        {
             if (word.Length < 2 || blocked.Contains(word)) return false;
             bool found;
             if (cache.TryGetValue(word, out found)) return found;
             string flags;
             found = words.TryGetValue(word, out flags) && !Has(flags, needAffix);
-            if (!found)
+            if (!found) found = Matches(word, prefixes.Matching(word, true)) || Matches(word, suffixes.Matching(word, false));
+            if (remember)
             {
-                foreach (Rule rule in rules)
+                if (cache.Count > 4096) cache.Clear();
+                cache[word] = found;
+            }
+            return found;
+        }
+        private bool Matches(string word, IEnumerable<Rule> matching)
+        {
+            string flags;
+            foreach (Rule rule in matching)
+            {
+                string root = rule.Reverse(word);
+                if (blocked.Contains(root)) continue;
+                if (words.TryGetValue(root, out flags) && flags.Contains(rule.Flag) && rule.Condition.IsMatch(root)) return true;
+                if (!rule.Prefix || !rule.Cross) continue;
+                foreach (Rule suffix in suffixes.Matching(root, false))
                 {
-                    string root = rule.Reverse(word);
-                    if (root == null || blocked.Contains(root)) continue;
-                    if (words.TryGetValue(root, out flags) && flags.Contains(rule.Flag)) { found = true; break; }
-                    if (!rule.Prefix || !rule.Cross) continue;
-                    foreach (Rule suffix in rules.Where(r => !r.Prefix && r.Cross))
-                    {
-                        string stem = suffix.Reverse(root);
-                        if (stem != null && !blocked.Contains(stem) && words.TryGetValue(stem, out flags) && flags.Contains(rule.Flag) && flags.Contains(suffix.Flag))
-                        { found = true; break; }
-                    }
-                    if (found) break;
+                    if (!suffix.Cross) continue;
+                    string stem = suffix.Reverse(root);
+                    if (!blocked.Contains(stem) && words.TryGetValue(stem, out flags) && flags.Contains(rule.Flag) && flags.Contains(suffix.Flag)
+                        && rule.Condition.IsMatch(root) && suffix.Condition.IsMatch(stem)) return true;
                 }
             }
-            if (cache.Count > 4096) cache.Clear();
-            cache[word] = found;
-            return found;
+            return false;
         }
     }
 
@@ -148,7 +187,7 @@ namespace TriSwitch
     {
         public Language Language;
         public string Text;
-        public bool Custom, PreserveLayout;
+        public bool Custom, PreserveLayout, Spelling;
     }
 
     public sealed class Detector
@@ -161,6 +200,7 @@ namespace TriSwitch
             new HashSet<string>("во до за из ко на об от по со да не ни но ну ты мы вы он ей её ее им их уж бы же ли то".Split(' '), StringComparer.OrdinalIgnoreCase),
             new HashSet<string>("до за зі із на об од по ув не ні та чи що як бо би же то це ця ці ми ти ви їй її їм їх".Split(' '), StringComparer.OrdinalIgnoreCase) };
         private readonly WordDictionary[] dictionaries;
+        private readonly SpellChecker[] spellCheckers;
         public readonly HashSet<string> Ignored = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         public Detector(string directory)
         {
@@ -168,9 +208,15 @@ namespace TriSwitch
                 new WordDictionary(Path.Combine(directory, "en", "en_US.dic"), Path.Combine(directory, "supplemental", "en.txt")),
                 new WordDictionary(Path.Combine(directory, "ru_RU", "ru_RU.dic"), Path.Combine(directory, "supplemental", "ru.txt")),
                 new WordDictionary(Path.Combine(directory, "uk_UA", "uk_UA.dic"), Path.Combine(directory, "supplemental", "uk.txt")) };
+            spellCheckers = dictionaries.Select((dictionary, index) => new SpellChecker(dictionary, (Language)index)).ToArray();
         }
         public int Count { get { return dictionaries.Sum(d => d.Count); } }
         public bool Known(string word, Language language) { return dictionaries[(int)language].Contains(word); }
+        public Suggestion SuggestSpelling(string word, Language language)
+        {
+            if (String.IsNullOrEmpty(word) || !Enum.IsDefined(typeof(Language), language)) return null;
+            return spellCheckers[(int)language].Suggest(word, Ignored);
+        }
         private bool CanCorrect(string word, Language language)
         {
             return (word.Length >= 3 || (word.Length == 2 && ShortWords[(int)language].Contains(word))) && Known(word, language);

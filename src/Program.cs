@@ -95,6 +95,7 @@ namespace TriSwitch
         private readonly bool testMode;
         internal TextBox TestEditor;
         internal ComboBox TestCyrillicPriority;
+        internal CheckBox TestSpellCheck;
         internal Action<string> TestTrace;
         private void TraceTest(string stage) { if (testMode && TestTrace != null) TestTrace(stage); }
         internal bool IsWatching { get { return watcher != null; } }
@@ -189,7 +190,7 @@ namespace TriSwitch
             outer.RowStyles.Add(new RowStyle(SizeType.AutoSize)); outer.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); outer.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             outer.Controls.Add(new Label { Text = "Три языка. Одна клавиатура.", AutoSize = true, Font = new Font("Segoe UI", 22, FontStyle.Bold), ForeColor = Theme.Heading }, 0, 0);
             layoutLabel.Text = catalog.Status; layoutLabel.AutoSize = true; layoutLabel.ForeColor = Theme.MutedText; outer.Controls.Add(layoutLabel, 0, 1);
-            autoBox.Text = "Автозамены по пробелу · словари и свои правила"; autoBox.AutoSize = true; autoBox.Checked = settings.Automatic;
+            autoBox.Text = "Автозамены по пробелу · раскладка, орфография и свои правила"; autoBox.AutoSize = true; autoBox.Checked = settings.Automatic;
             autoBox.CheckedChanged += delegate { settings.Automatic = autoBox.Checked; Reset(); SaveSettings(); UpdateStatus(); };
             outer.Controls.Add(autoBox, 0, 2);
             var tabs = new ContrastTabControl { Dock = DockStyle.Fill };
@@ -263,7 +264,7 @@ namespace TriSwitch
                 }
             };
             layout.Controls.Add(startup, 0, 0); layout.SetColumnSpan(startup, 2);
-            var priorityPanel = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, RowCount = 2, Margin = new Padding(0, 0, 0, 12) };
+            var priorityPanel = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, RowCount = 4, Margin = new Padding(0, 0, 0, 12) };
             priorityPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); priorityPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             priorityPanel.Controls.Add(new Label { Text = "Приоритет языка при неоднозначности:", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 0);
             var priority = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 175, Anchor = AnchorStyles.Left, AccessibleName = "Приоритет языка" };
@@ -286,6 +287,25 @@ namespace TriSwitch
             priorityPanel.Controls.Add(priority, 1, 0);
             var priorityHelp = new Label { Text = "Выбор между RU и UK применяется и сохраняется сразу. По умолчанию — русский.", AutoSize = true, Dock = DockStyle.Fill, ForeColor = Theme.MutedText };
             priorityPanel.Controls.Add(priorityHelp, 0, 1); priorityPanel.SetColumnSpan(priorityHelp, 2);
+            var spelling = new CheckBox { Text = "Исправлять орфографию и опечатки после пробела", AutoSize = true,
+                Checked = settings.SpellCheck, Margin = new Padding(3, 12, 3, 3), AccessibleName = "Исправление орфографии" };
+            if (testMode) TestSpellCheck = spelling;
+            bool updatingSpelling = false;
+            spelling.CheckedChanged += delegate
+            {
+                if (updatingSpelling) return;
+                string error;
+                if (ApplySpellCheck(spelling.Checked, out error))
+                    stateLabel.Text = "Исправление опечаток " + (settings.SpellCheck ? "включено" : "отключено") + ". Настройка сохранена.";
+                else
+                {
+                    updatingSpelling = true; spelling.Checked = settings.SpellCheck; updatingSpelling = false;
+                    MessageBox.Show(this, "Не удалось сохранить настройку орфографии:\r\n" + error, "TriSwitch", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            };
+            priorityPanel.Controls.Add(spelling, 0, 2); priorityPanel.SetColumnSpan(spelling, 2);
+            var spellingHelp = new Label { Text = "Проверка на языке ввода. Сохраняется сразу; замена отменяется обычной клавишей отмены.", AutoSize = true, Dock = DockStyle.Fill, ForeColor = Theme.MutedText };
+            priorityPanel.Controls.Add(spellingHelp, 0, 3); priorityPanel.SetColumnSpan(spellingHelp, 2);
             layout.Controls.Add(priorityPanel, 0, 1); layout.SetColumnSpan(priorityPanel, 2);
             layout.Controls.Add(new Label { Text = "Не работать в программах\r\nИмя процесса, по одному на строку", Dock = DockStyle.Fill, AutoSize = true }, 0, 2);
             layout.Controls.Add(new Label { Text = "Не исправлять слова автоматически\r\nПо одному на строку", Dock = DockStyle.Fill, AutoSize = true }, 1, 2);
@@ -305,6 +325,14 @@ namespace TriSwitch
         {
             error = null;
             Settings next = settings.Copy(); next.CyrillicPriority = language;
+            try { next.Save(settingsPath); }
+            catch (Exception e) { error = e.Message; return false; }
+            settings = next; Reset(); UpdateStatus(); return true;
+        }
+        internal bool ApplySpellCheck(bool enabled, out string error)
+        {
+            error = null;
+            Settings next = settings.Copy(); next.SpellCheck = enabled;
             try { next.Save(settingsPath); }
             catch (Exception e) { error = e.Message; return false; }
             settings = next; Reset(); UpdateStatus(); return true;
@@ -360,8 +388,9 @@ namespace TriSwitch
                     Language preferred = catalog.Available(settings.CyrillicPriority) ? settings.CyrillicPriority
                         : settings.CyrillicPriority == Language.Russian ? Language.Ukrainian : Language.Russian;
                     Suggestion suggestion = replacements.Find(buffer.Word, buffer.Language, detector.Ignored) ?? detector.Suggest(buffer.Word, buffer.Language, catalog.Convert, preferred);
+                    if (suggestion == null && settings.SpellCheck) suggestion = detector.SuggestSpelling(buffer.Word, buffer.Language);
                     if (suggestion != null && (suggestion.PreserveLayout || catalog.Available(suggestion.Language)))
-                        Schedule(delegate { ReplaceWord(suggestion.Text, suggestion.Language, true, suggestion.PreserveLayout, suggestion.Custom); }, e.Serial);
+                        Schedule(delegate { ReplaceWord(suggestion.Text, suggestion.Language, true, suggestion.PreserveLayout, suggestion.Custom, suggestion.Spelling); }, e.Serial);
                 }
                 return;
             }
@@ -386,7 +415,7 @@ namespace TriSwitch
             return !paused && buffer.Valid && !Native.ModifiersDown && currentFocus.Same(Native.Focus()) && guard.TryCheck(currentFocus, out identity) && identity == currentIdentity
                 && guard.TailMatches(buffer.Word + buffer.Suffix) && currentFocus.Same(Native.Focus()) && watcher.Serial == pendingSerial;
         }
-        private void ReplaceWord(string replacement, Language target, bool automatic, bool preserveLayout = false, bool custom = false)
+        private void ReplaceWord(string replacement, Language target, bool automatic, bool preserveLayout = false, bool custom = false, bool spelling = false)
         {
             if (!CanReplace()) { Reset(); return; }
             if (!preserveLayout && !catalog.Available(target)) { Notify("Раскладка " + Layouts.Names[(int)target] + " не установлена в Windows."); return; }
@@ -396,7 +425,7 @@ namespace TriSwitch
             undoWord = old; undoSuffix = suffix; undoLanguage = oldLanguage; undoAvailable = true;
             buffer.Word = replacement; buffer.Language = target;
             if (!preserveLayout) catalog.Switch(currentFocus, target);
-            stateLabel.Text = (custom ? "Своя замена" : automatic ? "Автоисправление" : "Замена") + " → " + Layouts.Names[(int)target]
+            stateLabel.Text = (custom ? "Своя замена" : spelling ? "Орфография" : automatic ? "Автоисправление" : "Замена") + " → " + Layouts.Names[(int)target]
                 + (settings.Hotkeys[4].Key == 0 ? ". Горячая клавиша отмены отключена." : ". " + settings.Hotkeys[4] + " — отмена.");
         }
         private void Undo()
@@ -461,6 +490,7 @@ namespace TriSwitch
             Application.EnableVisualStyles(); Application.SetCompatibleTextRenderingDefault(false);
             if (args.Contains("--self-test")) return Tests.Run(AppDomain.CurrentDomain.BaseDirectory);
             if (args.Contains("--integration-test")) return IntegrationTests.Run(AppDomain.CurrentDomain.BaseDirectory);
+            if (args.Contains("--spelling-test")) return SpellingIntegrationTests.Run(AppDomain.CurrentDomain.BaseDirectory);
             if (args.Contains("--ui-smoke-test")) return IntegrationTests.Preview(AppDomain.CurrentDomain.BaseDirectory);
             if (args.Contains("--startup-test")) return IntegrationTests.Startup(AppDomain.CurrentDomain.BaseDirectory);
             if (args.Contains("--notepad-test")) return NotepadTests.Run(AppDomain.CurrentDomain.BaseDirectory);

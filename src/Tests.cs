@@ -47,6 +47,7 @@ namespace TriSwitch
                 test("Ambiguous different RU/UK spelling prefers Russian", delegate { Suggest(detector, "csh", Language.English, "сыр", Language.Russian); });
                 DetectionTests.Run(test, detector);
                 SupplementalDictionaryTests.Run(test, detector);
+                SpellingTests.Run(test, detector);
                 test("Numbers and URLs unchanged", delegate
                 { foreach (string s in new[] { "ghbdtn1", "user@example.com", "https://ghbdtn", "my_name" }) Check(detector.Suggest(s, Language.English, Layouts.Convert) == null, s); });
                 test("Ignored word", delegate { detector.Ignored.Add("ghbdtn"); Check(detector.Suggest("GHBDTN!", Language.English, Layouts.Convert) == null, "ignore"); detector.Ignored.Clear(); });

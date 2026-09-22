@@ -17,6 +17,7 @@ namespace TriSwitch
         {
             test("Default hotkeys validate", delegate { HotkeyBinding.Validate(HotkeyBinding.Defaults()); });
             test("Cyrillic priority defaults to Russian", delegate { Tests.Check(new Settings().CyrillicPriority == Language.Russian, "wrong default priority"); });
+            test("Spelling correction is enabled by default", delegate { Tests.Check(new Settings().SpellCheck, "spelling correction disabled by default"); });
             test("Startup command quotes spaced Unicode path and requests tray", delegate { Tests.Equal("\"D:\\Мои программы\\TriSwitch.exe\" --tray", StartupRegistration.CommandFor(@"D:\Мои программы\TriSwitch.exe")); });
             test("Startup command rejects invalid executable paths", delegate { Reject(() => StartupRegistration.CommandFor("TriSwitch.exe")); Reject(() => StartupRegistration.CommandFor("D:\\app\" --other.exe")); });
             test("Duplicate hotkeys rejected", delegate { var b = HotkeyBinding.Defaults(); b[1] = b[0].Copy(); Reject(() => HotkeyBinding.Validate(b)); });
@@ -79,6 +80,7 @@ namespace TriSwitch
                     Settings s = Settings.Load(path); Tests.Check(!s.Automatic, "automatic changed"); Tests.Equal("myapp", s.Exclusions); Tests.Equal("myword", s.IgnoreWords);
                     Tests.Check(s.Hotkeys.Length == 6 && s.Hotkeys[1].Key == 50 && s.Replacements.Count == 0, "missing defaults");
                     Tests.Check(s.CyrillicPriority == Language.Russian, "legacy settings did not receive Russian priority");
+                    Tests.Check(s.SpellCheck, "legacy settings did not enable spelling correction");
                 }
                 finally { if (File.Exists(path)) File.Delete(path); }
             });
@@ -87,14 +89,20 @@ namespace TriSwitch
                 string path = Path.Combine(directory, "test-new-settings.json");
                 try
                 {
-                    var s = new Settings { Automatic = false, CyrillicPriority = Language.Ukrainian, Exclusions = "myapp", IgnoreWords = "myword" }; s.Hotkeys[1] = new HotkeyBinding { Key = 119, Modifiers = 6 }; s.Hotkeys[2] = new HotkeyBinding(); s.Replacements.Add(Rule("адр", "Моя улица", 1)); s.Save(path);
-                    Settings loaded = Settings.Load(path); Tests.Check(loaded.Hotkeys[1].Same(s.Hotkeys[1]) && loaded.Hotkeys[2].Key == 0, "lost hotkeys");
-                    Tests.Check(loaded.CyrillicPriority == Language.Ukrainian && !loaded.Automatic, "lost priority or automatic setting"); Tests.Equal("myapp", loaded.Exclusions); Tests.Equal("myword", loaded.IgnoreWords);
-                    Tests.Equal("Моя улица", loaded.Replacements[0].To); Tests.Check(loaded.Replacements[0].Target == 1, "lost target");
-                    Settings copy = loaded.Copy(); copy.Replacements[0].To = "another"; copy.Hotkeys[1].Key = 120;
-                    Tests.Check(copy.CyrillicPriority == Language.Ukrainian && !copy.Automatic, "copy lost priority or automatic setting"); Tests.Equal("myapp", copy.Exclusions); Tests.Equal("myword", copy.IgnoreWords);
-                    copy.CyrillicPriority = Language.Russian; Tests.Check(loaded.CyrillicPriority == Language.Ukrainian, "copy changed original priority");
-                    Tests.Equal("Моя улица", loaded.Replacements[0].To); Tests.Check(loaded.Hotkeys[1].Key == 119, "shared mutable copy");
+                    foreach (bool spellCheck in new[] { false, true })
+                    {
+                        var s = new Settings { Automatic = false, SpellCheck = spellCheck, CyrillicPriority = Language.Ukrainian, Exclusions = "myapp", IgnoreWords = "myword" }; s.Hotkeys[1] = new HotkeyBinding { Key = 119, Modifiers = 6 }; s.Hotkeys[2] = new HotkeyBinding(); s.Replacements.Add(Rule("адр", "Моя улица", 1)); s.Save(path);
+                        Settings loaded = Settings.Load(path); Tests.Check(loaded.Hotkeys[1].Same(s.Hotkeys[1]) && loaded.Hotkeys[2].Key == 0, "lost hotkeys");
+                        Tests.Check(loaded.CyrillicPriority == Language.Ukrainian && !loaded.Automatic, "lost priority or automatic setting"); Tests.Equal("myapp", loaded.Exclusions); Tests.Equal("myword", loaded.IgnoreWords);
+                        Tests.Check(loaded.SpellCheck == spellCheck, "lost spelling setting");
+                        Tests.Equal("Моя улица", loaded.Replacements[0].To); Tests.Check(loaded.Replacements[0].Target == 1, "lost target");
+                        Settings copy = loaded.Copy(); copy.Replacements[0].To = "another"; copy.Hotkeys[1].Key = 120;
+                        Tests.Check(copy.CyrillicPriority == Language.Ukrainian && !copy.Automatic, "copy lost priority or automatic setting"); Tests.Equal("myapp", copy.Exclusions); Tests.Equal("myword", copy.IgnoreWords);
+                        Tests.Check(copy.SpellCheck == spellCheck, "copy lost spelling setting");
+                        copy.SpellCheck = !spellCheck; Tests.Check(loaded.SpellCheck == spellCheck, "copy changed original spelling setting");
+                        copy.CyrillicPriority = Language.Russian; Tests.Check(loaded.CyrillicPriority == Language.Ukrainian, "copy changed original priority");
+                        Tests.Equal("Моя улица", loaded.Replacements[0].To); Tests.Check(loaded.Hotkeys[1].Key == 119, "shared mutable copy");
+                    }
                 }
                 finally { if (File.Exists(path)) File.Delete(path); }
             });
