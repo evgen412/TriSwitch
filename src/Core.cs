@@ -73,7 +73,7 @@ namespace TriSwitch
         private string needAffix, forbidden, onlyCompound;
         public int Count { get { return words.Count; } }
 
-        public WordDictionary(string path)
+        public WordDictionary(string path, string supplementPath = null)
         {
             var cross = new Dictionary<string, bool>();
             foreach (string line in File.ReadLines(Path.ChangeExtension(path, ".aff"), Encoding.UTF8))
@@ -101,6 +101,15 @@ namespace TriSwitch
                 if (Has(flags, forbidden) || Has(flags, onlyCompound)) { blocked.Add(word); continue; }
                 string old;
                 words[word] = words.TryGetValue(word, out old) ? old + flags : flags;
+            }
+            if (supplementPath != null && File.Exists(supplementPath))
+            {
+                foreach (string raw in File.ReadLines(supplementPath, Encoding.UTF8))
+                {
+                    string word = raw.Trim().ToLowerInvariant().Replace('’', '\'').Replace('ʼ', '\'');
+                    if (word.Length == 0 || word.StartsWith("#", StringComparison.Ordinal) || blocked.Contains(word) || words.ContainsKey(word)) continue;
+                    words.Add(word, "");
+                }
             }
         }
         private static bool Has(string flags, string flag) { return flag != null && flags.Contains(flag); }
@@ -144,22 +153,33 @@ namespace TriSwitch
 
     public sealed class Detector
     {
+        // Two-letter dictionary entries include many initials and abbreviations.
+        // Only common function words are eligible for automatic correction at
+        // this length; longer words still use the complete dictionaries.
+        private static readonly HashSet<string>[] ShortWords = {
+            new HashSet<string>("am an as at be by do go he if in is it me my no of on or so to up us we".Split(' '), StringComparer.OrdinalIgnoreCase),
+            new HashSet<string>("во до за из ко на об от по со да не ни но ну ты мы вы он ей её ее им их уж бы же ли то".Split(' '), StringComparer.OrdinalIgnoreCase),
+            new HashSet<string>("до за зі із на об од по ув не ні та чи що як бо би же то це ця ці ми ти ви їй її їм їх".Split(' '), StringComparer.OrdinalIgnoreCase) };
         private readonly WordDictionary[] dictionaries;
         public readonly HashSet<string> Ignored = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         public Detector(string directory)
         {
             dictionaries = new[] {
-                new WordDictionary(Path.Combine(directory, "en", "en_US.dic")),
-                new WordDictionary(Path.Combine(directory, "ru_RU", "ru_RU.dic")),
-                new WordDictionary(Path.Combine(directory, "uk_UA", "uk_UA.dic")) };
+                new WordDictionary(Path.Combine(directory, "en", "en_US.dic"), Path.Combine(directory, "supplemental", "en.txt")),
+                new WordDictionary(Path.Combine(directory, "ru_RU", "ru_RU.dic"), Path.Combine(directory, "supplemental", "ru.txt")),
+                new WordDictionary(Path.Combine(directory, "uk_UA", "uk_UA.dic"), Path.Combine(directory, "supplemental", "uk.txt")) };
         }
         public int Count { get { return dictionaries.Sum(d => d.Count); } }
         public bool Known(string word, Language language) { return dictionaries[(int)language].Contains(word); }
+        private bool CanCorrect(string word, Language language)
+        {
+            return (word.Length >= 3 || (word.Length == 2 && ShortWords[(int)language].Contains(word))) && Known(word, language);
+        }
         private static string TrimEnd(string word) { return word.TrimEnd('.', ',', '!', '?', ':', ';', ')', '"', '»'); }
-        public Suggestion Suggest(string word, Language source, Func<string, Language, Language, string> convert)
+        public Suggestion Suggest(string word, Language source, Func<string, Language, Language, string> convert, Language preferredCyrillic = Language.Russian)
         {
             string bare = TrimEnd(word);
-            if (bare.Length < 4 || word.Length > 64 || word.Any(char.IsDigit) || word.Contains("@") || word.Contains("_") || word.Contains("://") || Ignored.Contains(bare)) return null;
+            if (word.Length < 2 || word.Length > 64 || word.Any(char.IsDigit) || word.Contains("@") || word.Contains("_") || word.Contains("://") || Ignored.Contains(word) || Ignored.Contains(bare)) return null;
             // A valid word in any supported language must not be overwritten.
             if (dictionaries.Any(d => d.Contains(bare))) return null;
             var candidates = new List<Suggestion>();
@@ -167,14 +187,30 @@ namespace TriSwitch
             {
                 if (target == source) continue;
                 string converted = convert(word, source, target);
-                if (converted != word && Known(TrimEnd(converted), target)) candidates.Add(new Suggestion { Language = target, Text = converted });
-                else if (bare != word)
+                if (converted != word && CanCorrect(TrimEnd(converted), target)) candidates.Add(new Suggestion { Language = target, Text = converted });
+                if (bare != word)
                 {
                     converted = convert(bare, source, target);
-                    if (converted != bare && Known(converted, target)) candidates.Add(new Suggestion { Language = target, Text = converted + word.Substring(bare.Length) });
+                    string text = converted + word.Substring(bare.Length);
+                    if (converted != bare && CanCorrect(converted, target))
+                    {
+                        // If both interpretations identify the same word, keep
+                        // the punctuation as typed (e.g. ? must not become ,).
+                        Suggestion sameWord = candidates.FirstOrDefault(c => c.Language == target && TrimEnd(c.Text) == converted);
+                        if (sameWord != null) sameWord.Text = text;
+                        else candidates.Add(new Suggestion { Language = target, Text = text });
+                    }
                 }
             }
-            return candidates.Count == 1 ? candidates[0] : null;
+            if (candidates.Count == 1) return candidates[0];
+            // Use the selected priority (Russian by default) when both
+            // Cyrillic layouts produce a word.
+            // More than one interpretation within the same language (such as
+            // a punctuation key) remains ambiguous and is not auto-corrected.
+            if (candidates.Count == 2 && candidates.Any(c => c.Language == Language.Russian)
+                && candidates.Any(c => c.Language == Language.Ukrainian))
+                return candidates.FirstOrDefault(c => c.Language == preferredCyrillic) ?? candidates[0];
+            return null;
         }
     }
 

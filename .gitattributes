@@ -3,3 +3,5 @@
 *.ps1 text eol=crlf
 # Keep third-party dictionary files byte-for-byte as downloaded.
 dictionaries/** -text
+# Normalize our own word lists while leaving third-party dictionaries intact.
+dictionaries/supplemental/*.txt text eol=lf

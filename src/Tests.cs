@@ -41,10 +41,12 @@ namespace TriSwitch
                 test("Leading punctuation key", delegate { Suggest(detector, ";bpym", Language.English, "жизнь", Language.Russian); });
                 test("Preserve punctuation", delegate { Suggest(detector, "ghbdtn!", Language.English, "привет!", Language.Russian); });
                 test("Preserve comma", delegate { Suggest(detector, "ghbdtn,", Language.English, "привет,", Language.Russian); });
-                test("Ambiguous RU/UK unchanged", delegate { Check(detector.Suggest("vfvf", Language.English, Layouts.Convert) == null, "мама is ambiguous"); });
+                test("Shared RU/UK spelling is corrected", delegate { Suggest(detector, "vfvf", Language.English, "мама", Language.Russian); });
                 test("Valid English unchanged", delegate { Check(detector.Suggest("hello", Language.English, Layouts.Convert) == null, "hello"); });
                 test("Valid Ukrainian unchanged", delegate { Check(detector.Suggest("привіт", Language.Ukrainian, Layouts.Convert) == null, "привіт"); });
-                test("Short tokens unchanged", delegate { Check(detector.Suggest("rjn", Language.English, Layouts.Convert) == null, "rjn"); });
+                test("Ambiguous different RU/UK spelling prefers Russian", delegate { Suggest(detector, "csh", Language.English, "сыр", Language.Russian); });
+                DetectionTests.Run(test, detector);
+                SupplementalDictionaryTests.Run(test, detector);
                 test("Numbers and URLs unchanged", delegate
                 { foreach (string s in new[] { "ghbdtn1", "user@example.com", "https://ghbdtn", "my_name" }) Check(detector.Suggest(s, Language.English, Layouts.Convert) == null, s); });
                 test("Ignored word", delegate { detector.Ignored.Add("ghbdtn"); Check(detector.Suggest("GHBDTN!", Language.English, Layouts.Convert) == null, "ignore"); detector.Ignored.Clear(); });
@@ -79,6 +81,35 @@ namespace TriSwitch
                 });
                 test("Native layout conversion", delegate
                 { if (catalog.Available(Language.English) && catalog.Available(Language.Ukrainian)) Equal("привіт", catalog.Convert("ghbdsn", Language.English, Language.Ukrainian)); else throw new Exception("EN or UK layout missing"); });
+                test("Native short-word detection", delegate
+                {
+                    foreach (Language language in Enum.GetValues(typeof(Language))) Check(catalog.Available(language), "Layout missing: " + language);
+                    foreach (var example in new[] {
+                        new { Input = "gjl,", Source = Language.English, Text = "под,", Target = Language.Russian },
+                        new { Input = "yf", Source = Language.English, Text = "на", Target = Language.Russian },
+                        new { Input = "gjkt", Source = Language.English, Text = "поле", Target = Language.Russian },
+                        new { Input = "gthtpfgecnb", Source = Language.English, Text = "перезапусти", Target = Language.Russian },
+                        new { Input = "dsl", Source = Language.English, Text = "від", Target = Language.Ukrainian },
+                        new { Input = "ещ", Source = Language.Russian, Text = "to", Target = Language.English } })
+                    {
+                        Suggestion result = detector.Suggest(example.Input, example.Source, catalog.Convert);
+                        Check(result != null, "no native suggestion for " + example.Input);
+                        Equal(example.Text, result.Text); Check(result.Language == example.Target, "wrong native target");
+                    }
+                });
+                test("Native Cyrillic detection respects the selected Ukrainian priority", delegate
+                {
+                    Suggestion result = detector.Suggest("Vfvf!", Language.English, catalog.Convert, Language.Ukrainian);
+                    Check(result != null, "no native suggestion for Vfvf!");
+                    Equal("Мама!", result.Text); Check(result.Language == Language.Ukrainian, "native preference ignored");
+                    result = detector.Suggest("csh", Language.English, catalog.Convert);
+                    Check(result != null, "no native suggestion for csh");
+                    Equal("сыр", result.Text); Check(result.Language == Language.Russian, "native Russian priority ignored");
+                    result = detector.Suggest("csh", Language.English, catalog.Convert, Language.Ukrainian);
+                    Check(result != null, "no native Ukrainian suggestion for csh");
+                    Equal("сір", result.Text); Check(result.Language == Language.Ukrainian, "native Ukrainian priority ignored");
+                    Check(detector.Suggest("j,tlf.", Language.English, catalog.Convert) == null, "native priority resolved multiple Russian readings");
+                });
                 PreferenceTests.Run(test, directory);
                 test("Text case RU UK EN", delegate
                 {
@@ -196,6 +227,8 @@ namespace TriSwitch
                 using (var picture = new System.Drawing.Bitmap(form.Width, form.Height))
                 { form.DrawToBitmap(picture, new System.Drawing.Rectangle(0, 0, form.Width, form.Height)); picture.Save(Path.Combine(directory, "window-preview.png")); }
                 Tests.Check(form.IsWatching, "watcher unavailable"); form.TestEditor.Focus(); focus(); activate(Language.English);
+                Tests.Check(form.TestCyrillicPriority.SelectedIndex == 0, "Russian priority not selected by default");
+                Tests.Equal("Русский", form.TestCyrillicPriority.Text);
                 string identity; bool safe = new FocusGuard().TryCheck(Native.Focus(), out identity);
                 var element = System.Windows.Automation.AutomationElement.FocusedElement;
                 log.Add("Guard=" + safe + "; identity=" + identity + "; control=" + element.Current.ControlType.ProgrammaticName + "; password=" + element.Current.IsPassword + "; focus=" + element.Current.HasKeyboardFocus);
@@ -204,10 +237,37 @@ namespace TriSwitch
             hotkey(8); add("UNDO preserves space", delegate { Tests.Equal("ghbdtn ", form.TestEditor.Text); }, 200);
             add("Use Russian input profile (prefer transient)", delegate { reset(); activate(Language.Russian); }, 150);
             type("hello "); add("RU profile auto correction", delegate { Tests.Equal("hello ", form.TestEditor.Text); Tests.Check(Native.InputLanguage(Native.GetKeyboardLayout(0)) == Language.English, "EN layout switch"); }, 200);
+            add("Reset", reset, 150); type("yf "); add("AUTO shared preposition", delegate { Tests.Equal("на ", form.TestEditor.Text); Tests.Check(Native.InputLanguage(Native.GetKeyboardLayout(0)) == Language.Russian, "shared preposition lost RU preference"); }, 200);
+            add("Reset", reset, 150); type("gjkt "); add("AUTO shared noun", delegate { Tests.Equal("поле ", form.TestEditor.Text); Tests.Check(Native.InputLanguage(Native.GetKeyboardLayout(0)) == Language.Russian, "shared noun lost RU preference"); }, 200);
+            add("Reset", reset, 150); type("gthtpfgecnb "); add("AUTO shared verb", delegate { Tests.Equal("перезапусти ", form.TestEditor.Text); Tests.Check(Native.InputLanguage(Native.GetKeyboardLayout(0)) == Language.Russian, "shared verb lost RU preference"); }, 200);
+            add("Reset", reset, 150); type("yf gjkt gthtpfgecnb "); add("AUTO shared phrase continues after layout switch", delegate { Tests.Equal("на поле перезапусти ", form.TestEditor.Text); Tests.Check(Native.InputLanguage(Native.GetKeyboardLayout(0)) == Language.Russian, "shared phrase lost RU preference"); }, 200);
             add("Reset", reset, 150); type("ghbdsn "); add("AUTO UK", delegate { Tests.Equal("привіт ", form.TestEditor.Text); Tests.Check(Native.InputLanguage(Native.GetKeyboardLayout(0)) == Language.Ukrainian, "UK layout switch"); }, 200);
-            add("Reset", reset, 150); type("vfvf "); add("AMBIGUOUS unchanged", delegate { Tests.Equal("vfvf ", form.TestEditor.Text); }, 200);
-            hotkey(0x33); add("MANUAL UK", delegate { Tests.Equal("мама ", form.TestEditor.Text); }, 200);
-            hotkey(0x31); add("MANUAL EN", delegate { Tests.Equal("vfvf ", form.TestEditor.Text); }, 200);
+            add("Reset", reset, 150); type("vfvf "); add("AUTO shared word prefers RU after UK correction", delegate { Tests.Equal("мама ", form.TestEditor.Text); Tests.Check(Native.InputLanguage(Native.GetKeyboardLayout(0)) == Language.Russian, "shared word did not prefer RU"); }, 200);
+            add("Reset", reset, 150); type("csh "); add("AUTO different Cyrillic readings prefer RU", delegate { Tests.Equal("сыр ", form.TestEditor.Text); Tests.Check(Native.InputLanguage(Native.GetKeyboardLayout(0)) == Language.Russian, "different Cyrillic readings did not prefer RU"); }, 200);
+            add("SET and persist Ukrainian priority", delegate
+            {
+                reset(); form.TestCyrillicPriority.SelectedIndex = 1;
+                Tests.Check(form.TestCyrillicPriority.SelectedIndex == 1, "Ukrainian priority not selected in settings");
+                Tests.Equal("Украинский", form.TestCyrillicPriority.Text);
+                Tests.Check((int)Settings.Load(Path.Combine(directory, "test-preferences.json")).CyrillicPriority == (int)Language.Ukrainian, "Ukrainian priority not persisted");
+            }, 200);
+            type("yf "); add("CONFIGURED UK priority handles shared preposition", delegate { Tests.Equal("на ", form.TestEditor.Text); Tests.Check(Native.InputLanguage(Native.GetKeyboardLayout(0)) == Language.Ukrainian, "configured UK priority ignored for shared text"); }, 200);
+            add("INVALID Cyrillic priority preserves saved preference", delegate
+            {
+                reset(); string error; Tests.Check(!form.ApplyCyrillicPriority(Language.English, out error), "English accepted as Cyrillic priority");
+                Tests.Check((int)Settings.Load(Path.Combine(directory, "test-preferences.json")).CyrillicPriority == (int)Language.Ukrainian, "invalid priority changed saved preference");
+            }, 200);
+            type("csh "); add("CONFIGURED UK priority handles different Cyrillic readings", delegate { Tests.Equal("сір ", form.TestEditor.Text); Tests.Check(Native.InputLanguage(Native.GetKeyboardLayout(0)) == Language.Ukrainian, "configured UK priority ignored for different text"); }, 200);
+            add("SET and persist Russian priority", delegate
+            {
+                reset(); form.TestCyrillicPriority.SelectedIndex = 0;
+                Tests.Check(form.TestCyrillicPriority.SelectedIndex == 0, "Russian priority not selected in settings");
+                Tests.Equal("Русский", form.TestCyrillicPriority.Text);
+                Tests.Check((int)Settings.Load(Path.Combine(directory, "test-preferences.json")).CyrillicPriority == (int)Language.Russian, "Russian priority not persisted");
+            }, 200);
+            type("csh "); add("CONFIGURED RU priority applies immediately", delegate { Tests.Equal("сыр ", form.TestEditor.Text); Tests.Check(Native.InputLanguage(Native.GetKeyboardLayout(0)) == Language.Russian, "configured RU priority ignored"); }, 200);
+            add("Reset", reset, 150); type("csh"); hotkey(0x33); add("MANUAL UK", delegate { Tests.Equal("сір", form.TestEditor.Text); }, 200);
+            hotkey(0x31); add("MANUAL EN", delegate { Tests.Equal("csh", form.TestEditor.Text); }, 200);
             add("Reset", reset, 150); type("ghbdtn"); hotkey(0x32); type(" "); hotkey(8);
             add("UNDO after manual correction then space", delegate { Tests.Equal("ghbdtn ", form.TestEditor.Text); }, 200);
             add("Reset", reset, 150); hotkey(0x20); type("ghbdsn "); add("PAUSE suppresses auto", delegate { Tests.Equal("ghbdsn ", form.TestEditor.Text); }, 200); hotkey(0x20);

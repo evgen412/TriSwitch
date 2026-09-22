@@ -94,6 +94,7 @@ namespace TriSwitch
         private readonly bool startHidden;
         private readonly bool testMode;
         internal TextBox TestEditor;
+        internal ComboBox TestCyrillicPriority;
         internal Action<string> TestTrace;
         private void TraceTest(string stage) { if (testMode && TestTrace != null) TestTrace(stage); }
         internal bool IsWatching { get { return watcher != null; } }
@@ -197,7 +198,7 @@ namespace TriSwitch
             homeLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize)); homeLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize)); homeLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             helpLabel.Dock = DockStyle.Fill; helpLabel.AutoSize = true; RefreshHotkeyHelp();
             homeLayout.Controls.Add(helpLabel, 0, 0);
-            homeLayout.Controls.Add(new Label { Dock = DockStyle.Fill, AutoSize = true, Margin = new Padding(3, 12, 3, 12), Text = "Проверка: выберите EN и наберите ghbdtn или ghbdsn, затем пробел.\r\nРезультат: привет / привіт. Неоднозначные слова остаются как есть.", ForeColor = Theme.MutedText }, 0, 1);
+            homeLayout.Controls.Add(new Label { Dock = DockStyle.Fill, AutoSize = true, Margin = new Padding(3, 12, 3, 12), Text = "Проверка: выберите EN и наберите ghbdtn, ghbdsn или yf, затем пробел.\r\nРезультат: привет / привіт / на. Приоритет RU/UK выбирается в настройках.", ForeColor = Theme.MutedText }, 0, 1);
             TestEditor = new TextBox { Multiline = true, Dock = DockStyle.Fill, ScrollBars = ScrollBars.Vertical, Font = new Font("Segoe UI", 14), AccessibleName = "Поле проверки раскладок" };
             homeLayout.Controls.Add(TestEditor, 0, 2);
             home.Controls.Add(homeLayout); tabs.TabPages.Add(home);
@@ -238,8 +239,9 @@ namespace TriSwitch
         private TabPage BuildSettings()
         {
             var page = new TabPage("Настройки") { Padding = new Padding(12), BackColor = Color.White };
-            var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 4 };
+            var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 5 };
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50)); layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize)); layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             var startup = new CheckBox { AutoSize = true, Text = "Запускать при входе в Windows · сразу в трей", Margin = new Padding(3, 3, 3, 16) };
@@ -261,19 +263,51 @@ namespace TriSwitch
                 }
             };
             layout.Controls.Add(startup, 0, 0); layout.SetColumnSpan(startup, 2);
-            layout.Controls.Add(new Label { Text = "Не работать в программах\r\nИмя процесса, по одному на строку", Dock = DockStyle.Fill, AutoSize = true }, 0, 1);
-            layout.Controls.Add(new Label { Text = "Не исправлять слова автоматически\r\nПо одному на строку", Dock = DockStyle.Fill, AutoSize = true }, 1, 1);
+            var priorityPanel = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, RowCount = 2, Margin = new Padding(0, 0, 0, 12) };
+            priorityPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); priorityPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            priorityPanel.Controls.Add(new Label { Text = "Приоритет языка при неоднозначности:", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 0);
+            var priority = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 175, Anchor = AnchorStyles.Left, AccessibleName = "Приоритет языка" };
+            if (testMode) TestCyrillicPriority = priority;
+            priority.Items.AddRange(new object[] { "Русский", "Украинский" });
+            priority.SelectedIndex = settings.CyrillicPriority == Language.Ukrainian ? 1 : 0;
+            bool updatingPriority = false;
+            priority.SelectedIndexChanged += delegate
+            {
+                if (updatingPriority || priority.SelectedIndex < 0) return;
+                string error;
+                if (ApplyCyrillicPriority(priority.SelectedIndex == 1 ? Language.Ukrainian : Language.Russian, out error))
+                    stateLabel.Text = "Приоритет языка: " + (settings.CyrillicPriority == Language.Ukrainian ? "украинский" : "русский") + ". Настройка сохранена.";
+                else
+                {
+                    updatingPriority = true; priority.SelectedIndex = settings.CyrillicPriority == Language.Ukrainian ? 1 : 0; updatingPriority = false;
+                    MessageBox.Show(this, "Не удалось сохранить приоритет языка:\r\n" + error, "TriSwitch", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            };
+            priorityPanel.Controls.Add(priority, 1, 0);
+            var priorityHelp = new Label { Text = "Выбор между RU и UK применяется и сохраняется сразу. По умолчанию — русский.", AutoSize = true, Dock = DockStyle.Fill, ForeColor = Theme.MutedText };
+            priorityPanel.Controls.Add(priorityHelp, 0, 1); priorityPanel.SetColumnSpan(priorityHelp, 2);
+            layout.Controls.Add(priorityPanel, 0, 1); layout.SetColumnSpan(priorityPanel, 2);
+            layout.Controls.Add(new Label { Text = "Не работать в программах\r\nИмя процесса, по одному на строку", Dock = DockStyle.Fill, AutoSize = true }, 0, 2);
+            layout.Controls.Add(new Label { Text = "Не исправлять слова автоматически\r\nПо одному на строку", Dock = DockStyle.Fill, AutoSize = true }, 1, 2);
             var programs = new TextBox { Multiline = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, Text = settings.Exclusions };
             var words = new TextBox { Multiline = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, Text = settings.IgnoreWords };
-            layout.Controls.Add(programs, 0, 2); layout.Controls.Add(words, 1, 2);
+            layout.Controls.Add(programs, 0, 3); layout.Controls.Add(words, 1, 3);
             var save = new Button { Text = "Сохранить", AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Padding = new Padding(12, 5, 12, 5) };
             Theme.HighlightButton(save);
             save.Click += delegate { settings.Exclusions = programs.Text; settings.IgnoreWords = words.Text; Configure(); Reset(); if (SaveSettings()) stateLabel.Text = "Исключения сохранены."; };
-            layout.Controls.Add(save, 0, 3);
+            layout.Controls.Add(save, 0, 4);
             var refresh = new Button { Text = "Обновить список раскладок", AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Padding = new Padding(12, 5, 12, 5) };
             Theme.HighlightButton(refresh);
-            refresh.Click += delegate { catalog.Refresh(); layoutLabel.Text = catalog.Status; }; layout.Controls.Add(refresh, 1, 3);
+            refresh.Click += delegate { catalog.Refresh(); layoutLabel.Text = catalog.Status; }; layout.Controls.Add(refresh, 1, 4);
             page.Controls.Add(layout); return page;
+        }
+        internal bool ApplyCyrillicPriority(Language language, out string error)
+        {
+            error = null;
+            Settings next = settings.Copy(); next.CyrillicPriority = language;
+            try { next.Save(settingsPath); }
+            catch (Exception e) { error = e.Message; return false; }
+            settings = next; Reset(); UpdateStatus(); return true;
         }
         private bool SaveSettings()
         {
@@ -323,7 +357,9 @@ namespace TriSwitch
                 if (undoAvailable) { undoSuffix = buffer.Suffix; if (!buffer.Valid) undoAvailable = false; }
                 if (buffer.Valid && settings.Automatic && !undoAvailable && watcher.Serial == e.Serial)
                 {
-                    Suggestion suggestion = replacements.Find(buffer.Word, buffer.Language, detector.Ignored) ?? detector.Suggest(buffer.Word, buffer.Language, catalog.Convert);
+                    Language preferred = catalog.Available(settings.CyrillicPriority) ? settings.CyrillicPriority
+                        : settings.CyrillicPriority == Language.Russian ? Language.Ukrainian : Language.Russian;
+                    Suggestion suggestion = replacements.Find(buffer.Word, buffer.Language, detector.Ignored) ?? detector.Suggest(buffer.Word, buffer.Language, catalog.Convert, preferred);
                     if (suggestion != null && (suggestion.PreserveLayout || catalog.Available(suggestion.Language)))
                         Schedule(delegate { ReplaceWord(suggestion.Text, suggestion.Language, true, suggestion.PreserveLayout, suggestion.Custom); }, e.Serial);
                 }

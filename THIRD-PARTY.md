@@ -12,4 +12,6 @@ TriSwitch использует неизменённые словари из оф
 
 При передаче программы сохраняйте папку `dictionaries` со всеми сопроводительными файлами. Авторство словарей принадлежит указанным в них правообладателям.
 
+В `dictionaries/supplemental` находятся составленные для TriSwitch дополнительные списки общеупотребительных слов и точных словоформ. Они не являются частью исходных словарей LibreOffice/Hunspell и хранятся отдельно; сторонние `.dic` и `.aff` не изменены.
+
 Справочники, использованные при разработке Windows-интеграции: [LowLevelKeyboardProc](https://learn.microsoft.com/en-us/windows/win32/winmsg/lowlevelkeyboardproc), [SendInput](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-sendinput), [ToUnicodeEx](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-tounicodeex).
