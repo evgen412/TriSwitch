@@ -20,6 +20,7 @@ namespace TriSwitch
             try
             {
                 var detector = new Detector(Path.Combine(directory, "dictionaries"));
+                SelectionTests.Run(test, directory);
                 test("Dictionary size", delegate { Check(detector.Count > 400000, detector.Count.ToString()); });
                 test("EN -> RU", delegate { Equal("привет", Layouts.Convert("ghbdtn", Language.English, Language.Russian)); });
                 test("EN -> UK", delegate { Equal("привіт", Layouts.Convert("ghbdsn", Language.English, Language.Ukrainian)); });

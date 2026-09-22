@@ -26,12 +26,21 @@ namespace TriSwitch
             if (Key == 145) name = "Scroll Lock";
             return ((Modifiers & 2) != 0 ? "Ctrl + " : "") + ((Modifiers & 1) != 0 ? "Alt + " : "") + ((Modifiers & 4) != 0 ? "Shift + " : "") + name;
         }
-        public static readonly string[] Actions = { "Слово → английский", "Слово → русский", "Слово → украинский", "Перебрать раскладки", "Отменить замену", "Пауза / продолжение" };
+        public static readonly string[] Actions = { "Слово → английский", "Слово → русский", "Слово → украинский", "Перебрать раскладки слова", "Отменить замену", "Пауза / продолжение", "Выделение: UK → RU → EN" };
         public static HotkeyBinding[] Defaults()
-        { return new uint[] { 0x31, 0x32, 0x33, 0x75, 8, 32 }.Select(k => new HotkeyBinding { Key = k, Modifiers = 3 }).ToArray(); }
+        { return new uint[] { 0x31, 0x32, 0x33, 0x75, 8, 32, 0x76 }.Select(k => new HotkeyBinding { Key = k, Modifiers = 3 }).ToArray(); }
+        internal static HotkeyBinding[] Upgrade(HotkeyBinding[] bindings)
+        {
+            if (bindings == null) return Defaults();
+            if (bindings.Length != 6) return bindings;
+            HotkeyBinding added = Defaults()[6];
+            // A user's existing F7 binding always wins over the new default.
+            if (bindings.Any(b => b != null && b.Same(added))) added = new HotkeyBinding();
+            return bindings.Concat(new[] { added }).ToArray();
+        }
         public static void Validate(HotkeyBinding[] bindings)
         {
-            if (bindings == null || bindings.Length != 6 || bindings.Any(b => b == null)) throw new ArgumentException("Нужно настроить все шесть действий.");
+            if (bindings == null || bindings.Length != Actions.Length || bindings.Any(b => b == null)) throw new ArgumentException("Нужно настроить все действия.");
             var used = new HashSet<string>();
             for (int i = 0; i < bindings.Length; i++)
             {
@@ -141,7 +150,7 @@ namespace TriSwitch
                 var value = (Settings)new DataContractJsonSerializer(typeof(Settings)).ReadObject(stream);
                 if (value == null) throw new InvalidDataException("Файл настроек пуст.");
                 value.Exclusions = value.Exclusions ?? ""; value.IgnoreWords = value.IgnoreWords ?? "";
-                value.Hotkeys = value.Hotkeys ?? HotkeyBinding.Defaults(); value.Replacements = value.Replacements ?? new List<ReplacementRule>();
+                value.Hotkeys = HotkeyBinding.Upgrade(value.Hotkeys); value.Replacements = value.Replacements ?? new List<ReplacementRule>();
                 value.ValidateCyrillicPriority(); HotkeyBinding.Validate(value.Hotkeys); new ReplacementBook(value.Replacements);
                 return value;
             }

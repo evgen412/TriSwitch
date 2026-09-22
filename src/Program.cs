@@ -24,7 +24,7 @@ namespace TriSwitch
             Excluded = new HashSet<string>(text.Split(new[] { '\r', '\n', ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
                 .Select(s => Path.GetFileNameWithoutExtension(s.Trim())), StringComparer.OrdinalIgnoreCase);
         }
-        public bool TryCheck(FocusStamp expected, out string identity)
+        public bool TryCheck(FocusStamp expected, out string identity, bool selectedText = false)
         {
             identity = null;
             if (!expected.Same(Native.Focus())) return false;
@@ -49,7 +49,14 @@ namespace TriSwitch
                 object pattern;
                 bool valueEditable = element.TryGetCurrentPattern(ValuePattern.Pattern, out pattern) && !((ValuePattern)pattern).Current.IsReadOnly;
                 bool nativeEditable = edit && element.Current.NativeWindowHandle == expected.Control.ToInt64();
-                if (!valueEditable && !nativeEditable && element.Current.ControlType != ControlType.Edit) return false;
+                bool documentEditable = false;
+                if (selectedText && element.Current.ControlType == ControlType.Document && element.TryGetCurrentPattern(TextPattern.Pattern, out pattern))
+                {
+                    TextPatternRange[] ranges = ((TextPattern)pattern).GetSelection();
+                    object readOnly = ranges.Length == 1 ? ranges[0].GetAttributeValue(TextPattern.IsReadOnlyAttribute) : null;
+                    documentEditable = readOnly is bool && !(bool)readOnly;
+                }
+                if (!valueEditable && !nativeEditable && !documentEditable && element.Current.ControlType != ControlType.Edit) return false;
                 if (element.TryGetCurrentPattern(ValuePattern.Pattern, out pattern) && ((ValuePattern)pattern).Current.IsReadOnly) return false;
                 identity = string.Join(".", element.GetRuntimeId().Select(n => n.ToString()).ToArray());
                 return expected.Same(Native.Focus());
@@ -144,11 +151,11 @@ namespace TriSwitch
             actionTimer.Tick += delegate
             {
                 if (pending == null) { actionTimer.Stop(); return; }
-                if (watcher.Serial != pendingSerial || DateTime.UtcNow > pendingDeadline) { CancelPending(); return; }
+                if (watcher.Serial != pendingSerial || DateTime.UtcNow > pendingDeadline) { Reset(); return; }
                 if (Native.ModifiersDown) return;
                 Action action = pending; CancelPending(); action();
             };
-            focusTimer.Tick += delegate { var focus = Native.Focus(); notepadFontGuard.Protect(focus); if (buffer.Valid && !currentFocus.Same(focus)) Reset(); };
+            focusTimer.Tick += delegate { var focus = Native.Focus(); notepadFontGuard.Protect(focus); if ((buffer.Valid && !currentFocus.Same(focus)) || (selectedSnapshot != null && !selectedSnapshot.Focus.Same(focus))) Reset(); };
             Shown += delegate { if (!previewOnly && !startHidden) StartWatcher(); };
             FormClosing += OnClosing;
             if (startHidden)
@@ -366,6 +373,7 @@ namespace TriSwitch
             notepadFontGuard.Protect(e.Focus);
             if (e.Reset) { Reset(); return; }
             if (hotkeys != null && hotkeys.Matches(e)) return;
+            ClearSelectionCycle();
             CancelPending();
             if (paused || e.Ctrl || e.Alt || e.Win) { Reset(); return; }
             // Never auto-expand text while the user is editing preferences.
@@ -408,7 +416,7 @@ namespace TriSwitch
             pending = action; pendingSerial = serial < 0 ? watcher.Serial : serial; pendingDeadline = DateTime.UtcNow.AddSeconds(1.5); actionTimer.Start();
         }
         private void CancelPending() { pending = null; actionTimer.Stop(); }
-        private void Reset() { buffer.Clear(); undoAvailable = false; currentIdentity = null; CancelPending(); }
+        private void Reset() { buffer.Clear(); undoAvailable = false; currentIdentity = null; ClearSelectionCycle(); CancelPending(); }
         private bool CanReplace()
         {
             string identity;
@@ -451,7 +459,13 @@ namespace TriSwitch
                 if (id == 6) TogglePause();
                 else if (!paused)
                 {
-                    if (id == 5) Schedule(Undo);
+                    if (selectionBusy) return;
+                    if (id == 7)
+                    {
+                        FocusStamp focus = Native.Focus();
+                        Schedule(delegate { CycleSelection(focus); });
+                    }
+                    else if (id == 5) Schedule(selectedSnapshot != null ? (Action)UndoSelection : Undo);
                     else if (buffer.Valid)
                     {
                         Language target = id >= 1 && id <= 3 ? (Language)(id - 1) : (Language)(((int)buffer.Language + 1) % 3);
@@ -491,6 +505,7 @@ namespace TriSwitch
             if (args.Contains("--self-test")) return Tests.Run(AppDomain.CurrentDomain.BaseDirectory);
             if (args.Contains("--integration-test")) return IntegrationTests.Run(AppDomain.CurrentDomain.BaseDirectory);
             if (args.Contains("--spelling-test")) return SpellingIntegrationTests.Run(AppDomain.CurrentDomain.BaseDirectory);
+            if (args.Contains("--selection-test")) return SelectionIntegrationTests.Run(AppDomain.CurrentDomain.BaseDirectory);
             if (args.Contains("--ui-smoke-test")) return IntegrationTests.Preview(AppDomain.CurrentDomain.BaseDirectory);
             if (args.Contains("--startup-test")) return IntegrationTests.Startup(AppDomain.CurrentDomain.BaseDirectory);
             if (args.Contains("--notepad-test")) return NotepadTests.Run(AppDomain.CurrentDomain.BaseDirectory);

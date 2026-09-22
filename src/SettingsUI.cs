@@ -24,9 +24,9 @@ namespace TriSwitch
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize)); layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize)); layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             layout.Controls.Add(new Label { AutoSize = true, Dock = DockStyle.Fill, Text = "Щёлкните поле и нажмите новое сочетание с Ctrl/Alt или F-клавишу, Pause.\r\nDelete / Backspace без модификаторов — отключить действие. Tab — следующее поле." }, 0, 0);
-            var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 7, AutoScroll = true };
+            var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = HotkeyBinding.Actions.Length + 1, AutoScroll = true };
             grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 48)); grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 52));
-            for (int i = 0; i < 6; i++)
+            for (int i = 0; i < HotkeyBinding.Actions.Length; i++)
             {
                 grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
                 grid.Controls.Add(new Label { AutoSize = true, Dock = DockStyle.Fill, Text = HotkeyBinding.Actions[i], TextAlign = ContentAlignment.MiddleLeft, Margin = new Padding(3, 8, 8, 8) }, 0, i);
@@ -44,7 +44,7 @@ namespace TriSwitch
                 hotkeyFeedback.Text = ok ? "Сохранено. Новые сочетания уже работают." : error;
             };
             var defaults = PreferenceButton("По умолчанию");
-            defaults.Click += delegate { HotkeyBinding[] values = HotkeyBinding.Defaults(); for (int i = 0; i < 6; i++) hotkeyBoxes[i].Binding = values[i]; hotkeyFeedback.Text = "Нажмите «Сохранить клавиши», чтобы применить."; };
+            defaults.Click += delegate { HotkeyBinding[] values = HotkeyBinding.Defaults(); for (int i = 0; i < values.Length; i++) hotkeyBoxes[i].Binding = values[i]; hotkeyFeedback.Text = "Нажмите «Сохранить клавиши», чтобы применить."; };
             buttons.Controls.Add(save); buttons.Controls.Add(defaults); layout.Controls.Add(buttons, 0, 2);
             hotkeyFeedback = new Label { AutoSize = true, Dock = DockStyle.Fill, Text = "Изменения применяются после сохранения. Занятые сочетания не заменят прежние." };
             layout.Controls.Add(hotkeyFeedback, 0, 3); page.Controls.Add(layout); return page;

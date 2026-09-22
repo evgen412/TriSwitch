@@ -60,7 +60,7 @@ namespace TriSwitch
                 {
                     registry.Start(HotkeyBinding.Defaults()); int id49 = registrations.Single(p => p.Value == "49:3").Key;
                     var changed = HotkeyBinding.Defaults(); var first = changed[0]; changed[0] = changed[1]; changed[1] = first; string error;
-                    Tests.Check(registry.Apply(changed, () => { }, out error), error); Tests.Check(registrations.Count == 6, "extra registration");
+                    Tests.Check(registry.Apply(changed, () => { }, out error), error); Tests.Check(registrations.Count == HotkeyBinding.Actions.Length, "extra registration");
                     Tests.Check(registry.Resolve(id49, 49, 3) == 2, "wrong action after swap");
                     Tests.Check(registry.Resolve(id49, 50, 3) == 0, "stale message accepted");
                 }
@@ -69,7 +69,7 @@ namespace TriSwitch
             {
                 var registrations = new HashSet<int>();
                 using (var registry = new HotkeyRegistry((id, b) => registrations.Add(id), id => registrations.Remove(id)))
-                { registry.Start(HotkeyBinding.Defaults()); var changed = HotkeyBinding.Defaults(); changed[0] = new HotkeyBinding(); string error; Tests.Check(registry.Apply(changed, () => { }, out error), error); Tests.Check(registrations.Count == 5, "not unregistered"); Tests.Check(!registry.Matches(new KeyEvent { Vk = 49, Ctrl = true, Alt = true }), "disabled key matches"); }
+                { registry.Start(HotkeyBinding.Defaults()); var changed = HotkeyBinding.Defaults(); changed[0] = new HotkeyBinding(); string error; Tests.Check(registry.Apply(changed, () => { }, out error), error); Tests.Check(registrations.Count == HotkeyBinding.Actions.Length - 1, "not unregistered"); Tests.Check(!registry.Matches(new KeyEvent { Vk = 49, Ctrl = true, Alt = true }), "disabled key matches"); }
             });
             test("Old settings migrate preserving user values", delegate
             {
@@ -78,7 +78,7 @@ namespace TriSwitch
                 {
                     File.WriteAllText(path, "{\"Automatic\":false,\"Exclusions\":\"myapp\",\"IgnoreWords\":\"myword\"}", Encoding.UTF8);
                     Settings s = Settings.Load(path); Tests.Check(!s.Automatic, "automatic changed"); Tests.Equal("myapp", s.Exclusions); Tests.Equal("myword", s.IgnoreWords);
-                    Tests.Check(s.Hotkeys.Length == 6 && s.Hotkeys[1].Key == 50 && s.Replacements.Count == 0, "missing defaults");
+                    Tests.Check(s.Hotkeys.Length == HotkeyBinding.Actions.Length && s.Hotkeys[1].Key == 50 && s.Replacements.Count == 0, "missing defaults");
                     Tests.Check(s.CyrillicPriority == Language.Russian, "legacy settings did not receive Russian priority");
                     Tests.Check(s.SpellCheck, "legacy settings did not enable spelling correction");
                 }
